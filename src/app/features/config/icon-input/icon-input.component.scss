@@ -10,4 +10,17 @@
     height: 16px;
     width: 16px;
   }
+
+  .category {
+    opacity: 0.62;
+    margin-left: auto;
+    padding-left: var(--s2);
+    font-size: 11px;
+  }
+
+  mat-option {
+    span {
+      padding-right: var(--s);
+    }
+  }
 }

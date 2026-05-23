@@ -20,6 +20,11 @@ import { containsEmoji, extractFirstEmoji } from '../../../util/extract-first-em
 import { isSingleEmoji } from '../../../util/extract-first-emoji';
 import { startWith } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  IconSuggestion,
+  getDefaultIconSuggestions,
+  searchIconSuggestions,
+} from './icon-input.util';
 
 @Component({
   selector: 'icon-input',
@@ -39,7 +44,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
   ],
 })
 export class IconInputComponent extends FieldType<FormlyFieldConfig> implements OnInit {
-  filteredIcons = signal<string[]>([]);
+  filteredIcons = signal<IconSuggestion[]>([]);
   isEmoji = signal(false);
   private readonly _destroyRef = inject(DestroyRef);
   private _iconLoader = inject(MaterialIconsLoaderService);
@@ -75,9 +80,9 @@ export class IconInputComponent extends FieldType<FormlyFieldConfig> implements 
           // If there's a current value, filter by it
           await this.onInputValueChange(currentValue);
         } else {
-          // Show first 50 icons when empty
+          // Show curated common icons first when empty.
           const icons = await this._iconLoader.loadIcons();
-          this.filteredIcons.set(icons.slice(0, 50));
+          this.filteredIcons.set(getDefaultIconSuggestions(icons));
         }
       } catch (error) {
         console.error('Failed to load material icons:', error);
@@ -95,11 +100,7 @@ export class IconInputComponent extends FieldType<FormlyFieldConfig> implements 
 
     try {
       const icons = await this._iconLoader.loadIcons();
-      const arr = icons.filter(
-        (icoStr) => icoStr && icoStr.toLowerCase().includes(val.toLowerCase()),
-      );
-      arr.length = Math.min(150, arr.length);
-      this.filteredIcons.set(arr);
+      this.filteredIcons.set(searchIconSuggestions(icons, val));
 
       const hasEmoji = containsEmoji(val);
 
@@ -132,7 +133,9 @@ export class IconInputComponent extends FieldType<FormlyFieldConfig> implements 
     this._lastSetValue = icon;
     this.formControl.setValue(icon);
     const emojiCheck = isSingleEmoji(icon);
-    this.isEmoji.set(emojiCheck && !this.filteredIcons().includes(icon));
+    this.isEmoji.set(
+      emojiCheck && !this.filteredIcons().some((item) => item.name === icon),
+    );
   }
 
   openEmojiPicker(): void {
