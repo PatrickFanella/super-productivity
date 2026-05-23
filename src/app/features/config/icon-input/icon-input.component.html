@@ -19,10 +19,11 @@
   (optionSelected)="onIconSelect($event.option.value)"
   [autoActiveFirstOption]="false"
 >
-  @for (icon of filteredIcons(); track trackByIndex($index, icon)) {
-    <mat-option [value]="icon">
-      <mat-icon>{{ icon }}</mat-icon>
-      <span>{{ icon }}</span>
+  @for (icon of filteredIcons(); track trackByIndex($index, icon.name)) {
+    <mat-option [value]="icon.name">
+      <mat-icon>{{ icon.name }}</mat-icon>
+      <span>{{ icon.name }}</span>
+      <small class="category">{{ icon.category }}</small>
     </mat-option>
   }
 </mat-autocomplete>
