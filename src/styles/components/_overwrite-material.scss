@@ -381,6 +381,97 @@ body .mat-mdc-button-base .mat-icon {
   text-overflow: ellipsis !important;
 }
 
+// The icon picker is rendered in the CDK overlay, outside the component scope.
+.mat-mdc-autocomplete-panel.icon-picker-panel {
+  max-height: min(60vh, 480px);
+
+  .mat-mdc-option {
+    min-height: var(--s6);
+    padding: var(--s-half) var(--s);
+  }
+
+  .icon-picker-option {
+    display: flex;
+    align-items: center;
+    gap: var(--s);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .icon-picker-glyph {
+    display: inline-flex;
+    flex: 0 0 var(--s5);
+    align-items: center;
+    justify-content: center;
+    width: var(--s5);
+    height: var(--s5);
+    border-radius: 50%;
+    background: var(--c-dark-10);
+
+    mat-icon {
+      width: var(--s3);
+      height: var(--s3);
+      margin: 0;
+      font-size: var(--s3);
+      line-height: var(--s3);
+      font-variation-settings:
+        'FILL' 1,
+        'wght' 500,
+        'GRAD' 0,
+        'opsz' 24;
+    }
+  }
+
+  .icon-picker-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+
+  .icon-picker-name,
+  .icon-picker-category {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .icon-picker-category {
+    color: var(--text-color-muted);
+  }
+
+  .icon-picker-tone-primary {
+    color: var(--palette-primary-500);
+  }
+
+  .icon-picker-tone-accent {
+    color: var(--palette-accent-500);
+  }
+
+  .icon-picker-tone-success {
+    color: var(--color-success);
+  }
+
+  .icon-picker-tone-warning {
+    color: var(--color-warning);
+  }
+
+  .icon-picker-tone-danger {
+    color: var(--color-danger);
+  }
+
+  .icon-picker-tone-calm {
+    color: var(--palette-primary-300);
+  }
+
+  .icon-picker-tone-creative {
+    color: var(--palette-accent-300);
+  }
+
+  .icon-picker-tone-neutral {
+    color: var(--text-color);
+  }
+}
+
 // CDK DRAG
 /* Animate items as they're being sorted. */
 .cdk-drop-list-dragging .cdk-drag {

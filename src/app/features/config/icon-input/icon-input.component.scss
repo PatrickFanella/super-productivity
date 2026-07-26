@@ -6,21 +6,8 @@
 
   mat-icon {
     margin-right: var(--s);
-    font-size: 16px;
-    height: 16px;
-    width: 16px;
-  }
-
-  .category {
-    opacity: 0.62;
-    margin-left: auto;
-    padding-left: var(--s2);
-    font-size: 11px;
-  }
-
-  mat-option {
-    span {
-      padding-right: var(--s);
-    }
+    font-size: var(--s3);
+    height: var(--s3);
+    width: var(--s3);
   }
 }

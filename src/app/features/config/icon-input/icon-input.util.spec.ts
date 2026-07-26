@@ -1,4 +1,5 @@
 import { getDefaultIconSuggestions, searchIconSuggestions } from './icon-input.util';
+import { T } from '../../../t.const';
 
 describe('icon-input utilities', () => {
   const icons = [
@@ -26,11 +27,34 @@ describe('icon-input utilities', () => {
     const suggestions = getDefaultIconSuggestions(icons);
 
     expect(suggestions.slice(0, 3)).toEqual([
-      { name: 'check_circle', category: 'Planning & tasks' },
-      { name: 'task_alt', category: 'Planning & tasks' },
-      { name: 'event_note', category: 'Planning & tasks' },
+      {
+        name: 'check_circle',
+        category: T.G.ICON_PICKER.PLANNING_TASKS,
+        tone: 'primary',
+      },
+      {
+        name: 'task_alt',
+        category: T.G.ICON_PICKER.PLANNING_TASKS,
+        tone: 'primary',
+      },
+      {
+        name: 'event_note',
+        category: T.G.ICON_PICKER.PLANNING_TASKS,
+        tone: 'primary',
+      },
     ]);
     expect(suggestions.some((item) => item.name === '10k')).toBeTrue();
+  });
+
+  it('labels non-curated fallback icons without dropping them', () => {
+    const suggestions = getDefaultIconSuggestions(icons);
+    const fallback = suggestions.find((item) => item.name === '10k');
+
+    expect(fallback).toEqual({
+      name: '10k',
+      category: T.G.ICON_PICKER.MORE_ICONS,
+      tone: 'neutral',
+    });
   });
 
   it('ranks direct starts-with matches before broader matches', () => {

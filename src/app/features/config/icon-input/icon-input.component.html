@@ -16,14 +16,21 @@
 
 <mat-autocomplete
   #auto="matAutocomplete"
+  class="icon-picker-panel"
   (optionSelected)="onIconSelect($event.option.value)"
   [autoActiveFirstOption]="false"
 >
   @for (icon of filteredIcons(); track trackByIndex($index, icon.name)) {
     <mat-option [value]="icon.name">
-      <mat-icon>{{ icon.name }}</mat-icon>
-      <span>{{ icon.name }}</span>
-      <small class="category">{{ icon.category }}</small>
+      <span class="icon-picker-option">
+        <span class="icon-picker-glyph icon-picker-tone-{{ icon.tone }}">
+          <mat-icon>{{ icon.name }}</mat-icon>
+        </span>
+        <span class="icon-picker-copy">
+          <span class="icon-picker-name">{{ icon.name }}</span>
+          <small class="icon-picker-category">{{ icon.category | translate }}</small>
+        </span>
+      </span>
     </mat-option>
   }
 </mat-autocomplete>

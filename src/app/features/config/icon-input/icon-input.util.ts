@@ -1,19 +1,34 @@
+import { T } from '../../../t.const';
+
 export interface IconSuggestion {
   name: string;
   category: string;
+  tone: IconTone;
 }
 
 interface IconCategory {
   label: string;
+  tone: IconTone;
   icons: string[];
 }
 
-const DEFAULT_ICON_LIMIT = 120;
-const SEARCH_ICON_LIMIT = 150;
+export type IconTone =
+  | 'primary'
+  | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'calm'
+  | 'creative'
+  | 'neutral';
+
+const DEFAULT_ICON_LIMIT = 240;
+const SEARCH_ICON_LIMIT = 240;
 
 export const COMMON_ICON_CATEGORIES: IconCategory[] = [
   {
-    label: 'Planning & tasks',
+    label: T.G.ICON_PICKER.PLANNING_TASKS,
+    tone: 'primary',
     icons: [
       'check_circle',
       'task_alt',
@@ -27,10 +42,17 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'today',
       'pending_actions',
       'playlist_add_check',
+      'alarm',
+      'checklist',
+      'fact_check',
+      'rule',
+      'list_alt',
+      'timer',
     ],
   },
   {
-    label: 'Work & projects',
+    label: T.G.ICON_PICKER.WORK_PROJECTS,
+    tone: 'warning',
     icons: [
       'folder',
       'work',
@@ -44,10 +66,17 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'flag',
       'priority_high',
       'bookmark',
+      'apartment',
+      'construction',
+      'engineering',
+      'analytics',
+      'monitoring',
+      'inventory',
     ],
   },
   {
-    label: 'Development & homelab',
+    label: T.G.ICON_PICKER.DEVELOPMENT_HOMELAB,
+    tone: 'calm',
     icons: [
       'code',
       'terminal',
@@ -61,10 +90,19 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'backup',
       'security',
       'monitoring',
+      'developer_mode_tv',
+      'data_object',
+      'database',
+      'lan',
+      'settings_ethernet',
+      'host',
+      'deployed_code',
+      'webhook',
     ],
   },
   {
-    label: 'Content & media',
+    label: T.G.ICON_PICKER.CONTENT_MEDIA,
+    tone: 'creative',
     icons: [
       'edit_note',
       'article',
@@ -78,10 +116,19 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'image',
       'campaign',
       'publish',
+      'description',
+      'newsmode',
+      'ink_pen',
+      'brush',
+      'mic',
+      'headphones',
+      'library_books',
+      'edit',
     ],
   },
   {
-    label: 'People & life',
+    label: T.G.ICON_PICKER.PEOPLE_LIFE,
+    tone: 'danger',
     icons: [
       'person',
       'groups',
@@ -95,10 +142,19 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'cleaning_services',
       'pets',
       'travel_explore',
+      'family_restroom',
+      'child_care',
+      'elderly',
+      'psychology',
+      'spa',
+      'hiking',
+      'sports_soccer',
+      'local_hospital',
     ],
   },
   {
-    label: 'Finance & admin',
+    label: T.G.ICON_PICKER.FINANCE_ADMIN,
+    tone: 'success',
     icons: [
       'account_balance',
       'account_balance_wallet',
@@ -112,6 +168,124 @@ export const COMMON_ICON_CATEGORIES: IconCategory[] = [
       'lock',
       'key',
       'inventory_2',
+      'calculate',
+      'shopping_cart',
+      'sell',
+      'store',
+      'contract',
+      'attach_money',
+      'trending_up',
+      'paid',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.COMMUNICATION,
+    tone: 'accent',
+    icons: [
+      'chat',
+      'forum',
+      'mail',
+      'call',
+      'contacts',
+      'notifications',
+      'alternate_email',
+      'send',
+      'share',
+      'public',
+      'language',
+      'rss_feed',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.TRAVEL_PLACES,
+    tone: 'calm',
+    icons: [
+      'flight',
+      'train',
+      'directions_car',
+      'directions_bike',
+      'map',
+      'location_on',
+      'hotel',
+      'luggage',
+      'beach_access',
+      'explore',
+      'commute',
+      'local_cafe',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.LEARNING_SCIENCE,
+    tone: 'primary',
+    icons: [
+      'school',
+      'science',
+      'experiment',
+      'biotech',
+      'calculate',
+      'menu_book',
+      'quiz',
+      'lightbulb',
+      'cognition',
+      'neurology',
+      'query_stats',
+      'model_training',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.NATURE_WEATHER,
+    tone: 'success',
+    icons: [
+      'sunny',
+      'partly_cloudy_day',
+      'rainy',
+      'snowing',
+      'thunderstorm',
+      'water_drop',
+      'air',
+      'forest',
+      'eco',
+      'park',
+      'yard',
+      'compost',
+      'recycling',
+      'potted_plant',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.HOME_SHOPPING,
+    tone: 'warning',
+    icons: [
+      'grocery',
+      'kitchen',
+      'chair',
+      'bed',
+      'garage',
+      'handyman',
+      'build',
+      'cleaning_services',
+      'laundry',
+      'vacuum',
+      'local_mall',
+      'redeem',
+    ],
+  },
+  {
+    label: T.G.ICON_PICKER.FUN_HOBBIES,
+    tone: 'creative',
+    icons: [
+      'celebration',
+      'sports_esports',
+      'casino',
+      'toys',
+      'extension',
+      'emoji_objects',
+      'interests',
+      'sports_soccer',
+      'music_note',
+      'movie',
+      'palette',
+      'photo_camera',
     ],
   },
 ];
@@ -173,8 +347,14 @@ const matchesSubsequence = (needle: string, haystack: string): boolean => {
 };
 
 const curatedRank = new Map<string, number>();
+const curatedCategory = new Map<string, IconCategory>();
 COMMON_ICON_CATEGORIES.flatMap((category) => category.icons).forEach((icon, index) => {
   if (!curatedRank.has(icon)) curatedRank.set(icon, index);
+});
+COMMON_ICON_CATEGORIES.forEach((category) => {
+  category.icons.forEach((icon) => {
+    if (!curatedCategory.has(icon)) curatedCategory.set(icon, category);
+  });
 });
 
 const getSearchText = (icon: string): string =>
@@ -189,7 +369,7 @@ export const getDefaultIconSuggestions = (icons: string[]): IconSuggestion[] => 
     for (const icon of category.icons) {
       if (!available.has(icon) || used.has(icon)) continue;
       used.add(icon);
-      suggestions.push({ name: icon, category: category.label });
+      suggestions.push({ name: icon, category: category.label, tone: category.tone });
     }
   }
 
@@ -197,7 +377,11 @@ export const getDefaultIconSuggestions = (icons: string[]): IconSuggestion[] => 
     if (suggestions.length >= DEFAULT_ICON_LIMIT) break;
     if (used.has(icon)) continue;
     used.add(icon);
-    suggestions.push({ name: icon, category: 'More icons' });
+    suggestions.push({
+      name: icon,
+      category: T.G.ICON_PICKER.MORE_ICONS,
+      tone: 'neutral',
+    });
   }
 
   return suggestions;
@@ -256,6 +440,11 @@ export const searchIconSuggestions = (
     .slice(0, SEARCH_ICON_LIMIT)
     .map((item) => ({
       name: item.icon,
-      category: ICON_ALIASES[item.icon]?.length ? 'Best match' : 'Material Symbols',
+      category:
+        curatedCategory.get(item.icon)?.label ??
+        (ICON_ALIASES[item.icon]?.length
+          ? T.G.ICON_PICKER.BEST_MATCH
+          : T.G.ICON_PICKER.MATERIAL_SYMBOLS),
+      tone: curatedCategory.get(item.icon)?.tone ?? ('neutral' as const),
     }));
 };

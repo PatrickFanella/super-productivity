@@ -26,6 +26,7 @@ import {
   getDefaultIconSuggestions,
   searchIconSuggestions,
 } from './icon-input.util';
+import { TranslatePipe } from '@ngx-translate/core';
 
 @Component({
   selector: 'icon-input',
@@ -42,6 +43,7 @@ import {
     MatOption,
     MatSuffix,
     MatTooltip,
+    TranslatePipe,
   ],
 })
 export class IconInputComponent extends FieldType<FormlyFieldConfig> implements OnInit {
@@ -67,7 +69,7 @@ export class IconInputComponent extends FieldType<FormlyFieldConfig> implements 
       });
   }
 
-  trackByIndex(i: number, p: any): number {
+  trackByIndex(i: number, _name: string): number {
     return i;
   }
 
@@ -77,6 +79,8 @@ export class IconInputComponent extends FieldType<FormlyFieldConfig> implements 
       const currentValue = this.formControl.value || '';
 
       try {
+        await this._iconLoader.ensureFontReady();
+
         if (currentValue) {
           // If there's a current value, filter by it
           await this.onInputValueChange(currentValue);
