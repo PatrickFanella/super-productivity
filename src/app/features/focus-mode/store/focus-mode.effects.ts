@@ -1,4 +1,4 @@
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, Injector } from '@angular/core';
 import { createEffect, ofType } from '@ngrx/effects';
 import { LOCAL_ACTIONS } from '../../../util/local-actions.token';
 import { Action, Store } from '@ngrx/store';
@@ -44,6 +44,7 @@ import {
 import { MetricService } from '../../metric/metric.service';
 import { FocusModeStorageService } from '../focus-mode-storage.service';
 import { TakeABreakService } from '../../take-a-break/take-a-break.service';
+import { WorkContextService } from '../../work-context/work-context.service';
 import { NotifyService } from '../../../core/notify/notify.service';
 import { msToString } from '../../../ui/duration/ms-to-string.pipe';
 import { T } from '../../../t.const';
@@ -66,6 +67,7 @@ export class FocusModeEffects {
   private metricService = inject(MetricService);
   private storageService = inject(FocusModeStorageService);
   private takeABreakService = inject(TakeABreakService);
+  private injector = inject(Injector);
   private notifyService = inject(NotifyService);
   private bannerService = inject(BannerService);
   private isAndroidWebView = inject(IS_ANDROID_WEB_VIEW_TOKEN);
@@ -194,6 +196,7 @@ export class FocusModeEffects {
       filter(
         ([action, timer, currentTaskId]) =>
           (timer.purpose === 'work' || timer.purpose === 'break') &&
+          !action.isManualBreakTransition &&
           !!action.pausedTaskId &&
           !!currentTaskId,
       ),
@@ -501,6 +504,43 @@ export class FocusModeEffects {
     ),
   );
 
+  // An explicit break is also used by the break reminder. Ordering is essential:
+  // unset the task while no timer is running, then start the break. Reversing
+  // these would let syncTrackingStopToSession$ pause the new break immediately.
+  startManualBreak$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(actions.startManualBreak),
+      withLatestFrom(
+        this.store.select(selectors.selectTimer),
+        this.taskService.currentTaskId$,
+      ),
+      filter(
+        ([_action, timer, currentTaskId]) => timer.purpose !== 'break' && !!currentTaskId,
+      ),
+      switchMap(([action, timer, currentTaskId]) => {
+        const actionsToDispatch: Action[] = [];
+        if (timer.purpose === 'work') {
+          actionsToDispatch.push(
+            actions.pauseFocusSession({
+              pausedTaskId: currentTaskId,
+              isManualBreakTransition: true,
+            }),
+          );
+        }
+        actionsToDispatch.push(
+          unsetCurrentTask(),
+          actions.startBreak({
+            duration: action.duration,
+            isManualBreak: true,
+            pausedTaskId: currentTaskId,
+          }),
+          actions.showFocusOverlay(),
+        );
+        return of(...actionsToDispatch);
+      }),
+    ),
+  );
+
   // Effect 4: Notification side effect (non-dispatching)
   notifyOnSessionComplete$ = createEffect(
     () =>
@@ -631,7 +671,10 @@ export class FocusModeEffects {
         this.store.select(selectors.selectMode),
         this.store.select(selectFocusModeConfig),
       ),
-      filter(([_, mode]) => {
+      filter(([action, mode]) => {
+        if (action.isManualBreak) {
+          return false;
+        }
         const strategy = this.strategyFactory.getStrategy(mode);
         return strategy.shouldAutoStartNextSession;
       }),
@@ -650,6 +693,28 @@ export class FocusModeEffects {
       this.actions$.pipe(
         ofType(actions.completeBreak),
         tap(() => this._notifyUser()),
+      ),
+    { dispatch: false },
+  );
+
+  // Explicit breaks are logged once the user consciously finishes or skips
+  // them. The duration is captured by the UI in the action because the reducer
+  // clears the timer before effects observe completeBreak/skipBreak.
+  logCompletedBreak$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(actions.completeBreak, actions.skipBreak),
+        filter(
+          (action) =>
+            action.isManualBreak === true &&
+            typeof action.completedDuration === 'number' &&
+            action.completedDuration > 0,
+        ),
+        tap((action) => {
+          void this.injector
+            .get(WorkContextService)
+            .addToBreakTimeForActiveContext(undefined, action.completedDuration!);
+        }),
       ),
     { dispatch: false },
   );
@@ -675,7 +740,7 @@ export class FocusModeEffects {
         }
 
         // Auto-start next session if configured
-        if (strategy.shouldAutoStartNextSession) {
+        if (!action.isManualBreak && strategy.shouldAutoStartNextSession) {
           const duration = strategy.initialSessionDuration;
           actionsToDispatch.push(
             actions.startFocusSession({

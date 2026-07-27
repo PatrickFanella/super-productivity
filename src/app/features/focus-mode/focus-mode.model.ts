@@ -6,6 +6,7 @@ export interface TimerState {
   duration: number;
   purpose: 'work' | 'break' | null;
   isLongBreak?: boolean;
+  isManualBreak?: boolean;
 }
 
 export enum FocusMainUIState {

@@ -30,6 +30,7 @@ import {
   selectFocusTask,
   setFocusModeMode,
   setFocusSessionDuration,
+  startManualBreak,
   startFocusPreparation,
   startFocusSession,
   unPauseFocusSession,
@@ -239,6 +240,7 @@ export class FocusModeMainComponent {
   isShowBottomControls = computed(() => this._isInProgress());
   isShowCountdown = computed(() => this._isCountdown());
   isShowPlayButton = computed(() => this._isPreparation());
+  isShowManualBreak = computed(() => this._isPreparation() && !!this.currentTask());
   isShowDurationSlider = computed(
     () =>
       this._isPreparation() &&
@@ -540,6 +542,16 @@ export class FocusModeMainComponent {
     // For Flowtime mode, duration must be 0 to count indefinitely
     const duration = this.mode() === FocusModeMode.Flowtime ? 0 : this.displayDuration();
     this._store.dispatch(startFocusSession({ duration }));
+  }
+
+  startManualBreak(): void {
+    this._store.dispatch(
+      startManualBreak({
+        duration:
+          this.focusModeService.pomodoroConfig()?.breakDuration ??
+          FOCUS_MODE_DEFAULTS.SHORT_BREAK_DURATION,
+      }),
+    );
   }
 
   pauseSession(): void {

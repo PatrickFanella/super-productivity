@@ -674,8 +674,19 @@ describe('FocusModeMainComponent', () => {
 
       expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
         'F.FOCUS_MODE.START_FOCUS_SESSION',
+        'F.FOCUS_MODE.BREAK_TITLE',
         'F.FOCUS_MODE.POMODORO_SETTINGS',
       ]);
+    });
+  });
+
+  describe('startManualBreak', () => {
+    it('should start a break using the configured Pomodoro short-break duration', () => {
+      component.startManualBreak();
+
+      expect(mockStore.dispatch).toHaveBeenCalledWith(
+        actions.startManualBreak({ duration: 5 * 60 * 1000 }),
+      );
     });
   });
 

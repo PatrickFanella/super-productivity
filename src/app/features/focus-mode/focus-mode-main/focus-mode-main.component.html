@@ -196,6 +196,18 @@
         <mat-icon>play_arrow</mat-icon>
       </button>
 
+      @if (isShowManualBreak()) {
+        <button
+          mat-icon-button
+          [matTooltip]="T.F.FOCUS_MODE.BREAK_TITLE | translate"
+          [attr.aria-label]="T.F.FOCUS_MODE.BREAK_TITLE | translate"
+          (click)="startManualBreak()"
+          class="mode-settings-btn"
+        >
+          <mat-icon>free_breakfast</mat-icon>
+        </button>
+      }
+
       @if (isShowPomodoroSettings()) {
         <button
           mat-icon-button

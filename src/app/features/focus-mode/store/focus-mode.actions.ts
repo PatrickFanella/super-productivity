@@ -28,7 +28,7 @@ export const navigateToMainScreen = createAction('[FocusMode] Navigate To Main S
 
 export const pauseFocusSession = createAction(
   '[FocusMode] Pause Session',
-  props<{ pausedTaskId?: string | null }>(),
+  props<{ pausedTaskId?: string | null; isManualBreakTransition?: boolean }>(),
 );
 export const unPauseFocusSession = createAction('[FocusMode] Resume Session');
 export const clearResumingBreakFlag = createAction(
@@ -48,15 +48,35 @@ export const endFlowtimeSession = createAction(
 
 export const startBreak = createAction(
   '[FocusMode] Start Break',
-  props<{ duration?: number; isLongBreak?: boolean; pausedTaskId?: string | null }>(),
+  props<{
+    duration?: number;
+    isLongBreak?: boolean;
+    isManualBreak?: boolean;
+    pausedTaskId?: string | null;
+  }>(),
+);
+// Starts an explicit, standalone break while a task is being tracked. The effect
+// stops tracking before starting the timer so tracking-stop synchronization
+// cannot pause the newly started break.
+export const startManualBreak = createAction(
+  '[FocusMode] Start Manual Break',
+  props<{ duration: number }>(),
 );
 export const skipBreak = createAction(
   '[FocusMode] Skip Break',
-  props<{ pausedTaskId?: string | null }>(),
+  props<{
+    pausedTaskId?: string | null;
+    completedDuration?: number;
+    isManualBreak?: boolean;
+  }>(),
 );
 export const completeBreak = createAction(
   '[FocusMode] Complete Break',
-  props<{ pausedTaskId?: string | null }>(),
+  props<{
+    pausedTaskId?: string | null;
+    completedDuration?: number;
+    isManualBreak?: boolean;
+  }>(),
 );
 
 export const incrementCycle = createAction('[FocusMode] Next Cycle');

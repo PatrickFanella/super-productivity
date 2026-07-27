@@ -29,6 +29,7 @@ import {
 import { updateGlobalConfigSection } from '../../config/store/global-config.actions';
 import { take, toArray } from 'rxjs/operators';
 import { HydrationStateService } from '../../../op-log/apply/hydration-state.service';
+import { WorkContextService } from '../../work-context/work-context.service';
 
 describe('FocusModeEffects', () => {
   let actions$: Observable<any>;
@@ -41,6 +42,9 @@ describe('FocusModeEffects', () => {
   let bannerServiceMock: any;
   let hydrationStateServiceMock: any;
   let notifyServiceMock: any;
+  let workContextServiceMock: jasmine.SpyObj<
+    Pick<WorkContextService, 'addToBreakTimeForActiveContext'>
+  >;
   let currentTaskId$: BehaviorSubject<string | null>;
 
   const createMockTimer = (overrides: Partial<TimerState> = {}): TimerState => ({
@@ -108,6 +112,10 @@ describe('FocusModeEffects', () => {
       notify: jasmine.createSpy('notify').and.resolveTo(undefined),
     };
 
+    workContextServiceMock = jasmine.createSpyObj<
+      Pick<WorkContextService, 'addToBreakTimeForActiveContext'>
+    >('WorkContextService', ['addToBreakTimeForActiveContext']);
+
     TestBed.configureTestingModule({
       providers: [
         FocusModeEffects,
@@ -147,6 +155,7 @@ describe('FocusModeEffects', () => {
         { provide: HydrationStateService, useValue: hydrationStateServiceMock },
         { provide: TakeABreakService, useValue: takeABreakServiceMock },
         { provide: NotifyService, useValue: notifyServiceMock },
+        { provide: WorkContextService, useValue: workContextServiceMock },
         { provide: IS_ANDROID_WEB_VIEW_TOKEN, useValue: false },
         {
           provide: GlobalTrackingIntervalService,
@@ -809,6 +818,70 @@ describe('FocusModeEffects', () => {
       });
     });
 
+    describe('startManualBreak$', () => {
+      it('should stop tracking before starting and surfacing a timed break', (done) => {
+        currentTaskId$.next('task-123');
+        actions$ = of(actions.startManualBreak({ duration: 15 * 60 * 1000 }));
+        store.overrideSelector(selectors.selectTimer, createMockTimer());
+        store.refreshState();
+
+        effects.startManualBreak$.pipe(toArray()).subscribe((actionsArr) => {
+          expect(actionsArr).toEqual([
+            unsetCurrentTask(),
+            actions.startBreak({
+              duration: 15 * 60 * 1000,
+              isManualBreak: true,
+              pausedTaskId: 'task-123',
+            }),
+            actions.showFocusOverlay(),
+          ]);
+          done();
+        });
+      });
+
+      it('should pause a running work session before starting the break', (done) => {
+        currentTaskId$.next('task-123');
+        actions$ = of(actions.startManualBreak({ duration: 15 * 60 * 1000 }));
+        store.overrideSelector(
+          selectors.selectTimer,
+          createMockTimer({ purpose: 'work', isRunning: true }),
+        );
+        store.refreshState();
+
+        effects.startManualBreak$.pipe(toArray()).subscribe((actionsArr) => {
+          expect(actionsArr).toEqual([
+            actions.pauseFocusSession({
+              pausedTaskId: 'task-123',
+              isManualBreakTransition: true,
+            }),
+            unsetCurrentTask(),
+            actions.startBreak({
+              duration: 15 * 60 * 1000,
+              isManualBreak: true,
+              pausedTaskId: 'task-123',
+            }),
+            actions.showFocusOverlay(),
+          ]);
+          done();
+        });
+      });
+
+      it('should not replace an existing break', (done) => {
+        currentTaskId$.next('task-123');
+        actions$ = of(actions.startManualBreak({ duration: 15 * 60 * 1000 }));
+        store.overrideSelector(
+          selectors.selectTimer,
+          createMockTimer({ purpose: 'break', isRunning: true }),
+        );
+        store.refreshState();
+
+        effects.startManualBreak$.pipe(toArray()).subscribe((actionsArr) => {
+          expect(actionsArr).toEqual([]);
+          done();
+        });
+      });
+    });
+
     describe('edge cases', () => {
       it('should handle missing focusModeConfig gracefully in incrementCycleOnSessionComplete$', (done) => {
         actions$ = of(actions.completeFocusSession({ isManual: true }));
@@ -833,6 +906,19 @@ describe('FocusModeEffects', () => {
 
   describe('break completion effects (refactored)', () => {
     describe('autoStartSessionOnBreakComplete$', () => {
+      it('should not start a focus session after a standalone break', (done) => {
+        actions$ = of(actions.completeBreak({ isManualBreak: true }));
+        store.overrideSelector(selectors.selectMode, FocusModeMode.Pomodoro);
+        store.refreshState();
+
+        effects.autoStartSessionOnBreakComplete$
+          .pipe(toArray())
+          .subscribe((actionsArr) => {
+            expect(actionsArr).toEqual([]);
+            done();
+          });
+      });
+
       it('should dispatch startFocusSession when strategy.shouldAutoStartNextSession is true', (done) => {
         actions$ = of(actions.completeBreak({ pausedTaskId: null }));
         store.overrideSelector(selectors.selectMode, FocusModeMode.Pomodoro);
@@ -902,6 +988,46 @@ describe('FocusModeEffects', () => {
         effects.resumeTrackingOnBreakComplete$.pipe(toArray()).subscribe((actionsArr) => {
           expect(actionsArr.length).toBe(0);
           done();
+        });
+      });
+    });
+
+    describe('logCompletedBreak$', () => {
+      it('records the elapsed manual break duration', (done) => {
+        actions$ = of(
+          actions.completeBreak({
+            pausedTaskId: 'task-123',
+            completedDuration: 5 * 60 * 1000,
+            isManualBreak: true,
+          }),
+        );
+
+        effects.logCompletedBreak$.subscribe({
+          complete: () => {
+            expect(
+              workContextServiceMock.addToBreakTimeForActiveContext,
+            ).toHaveBeenCalledWith(undefined, 5 * 60 * 1000);
+            done();
+          },
+        });
+      });
+
+      it('does not create an empty break metric', (done) => {
+        actions$ = of(
+          actions.skipBreak({
+            pausedTaskId: 'task-123',
+            completedDuration: 0,
+            isManualBreak: true,
+          }),
+        );
+
+        effects.logCompletedBreak$.subscribe({
+          complete: () => {
+            expect(
+              workContextServiceMock.addToBreakTimeForActiveContext,
+            ).not.toHaveBeenCalled();
+            done();
+          },
         });
       });
     });
