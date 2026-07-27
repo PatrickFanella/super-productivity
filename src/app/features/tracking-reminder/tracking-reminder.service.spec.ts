@@ -19,6 +19,7 @@ import {
 import { selectIsFocusModeEnabled } from '../config/store/global-config.reducer';
 import { FocusScreen, TimerState } from '../focus-mode/focus-mode.model';
 import { GlobalConfigState } from '../config/global-config.model';
+import { LS } from '../../core/persistence/storage-keys.const';
 
 const TRACKING_REMINDER_MIN_TIME = 5000;
 
@@ -39,6 +40,14 @@ const createMockCfg = (overrides: Partial<GlobalConfigState> = {}): GlobalConfig
       trackingReminderMinTime: TRACKING_REMINDER_MIN_TIME,
       isAutoStartNextTask: false,
       isNotifyWhenTimeEstimateExceeded: false,
+    },
+    schedule: {
+      isWorkStartEndEnabled: false,
+      workStart: '09:00',
+      workEnd: '17:00',
+      isLunchBreakEnabled: false,
+      lunchBreakStart: '12:00',
+      lunchBreakEnd: '13:00',
     },
     ...overrides,
   }) as any;
@@ -117,6 +126,7 @@ describe('TrackingReminderService', () => {
 
   afterEach(() => {
     store.resetSelectors();
+    localStorage.removeItem(LS.TRACKING_REMINDER_PAUSED_DAY);
   });
 
   it('emits when focus mode is disabled and no current task', fakeAsync(() => {
@@ -236,6 +246,76 @@ describe('TrackingReminderService', () => {
     tick(TRACKING_REMINDER_MIN_TIME + 1000);
     expect(values.length).toBeGreaterThan(0);
     expect(values[values.length - 1]).toBeGreaterThan(TRACKING_REMINDER_MIN_TIME);
+
+    sub.unsubscribe();
+    discardPeriodicTasks();
+  }));
+
+  it('persists a manual pause for the logical day and resumes on the next day', fakeAsync(() => {
+    let logicalDay = '2026-07-27';
+    const dateService = TestBed.inject(DateService) as unknown as {
+      todayStr: () => string;
+    };
+    dateService.todayStr = () => logicalDay;
+
+    service.pauseRemindersUntilTomorrow();
+    expect(localStorage.getItem(LS.TRACKING_REMINDER_PAUSED_DAY)).toBe(logicalDay);
+
+    const values: number[] = [];
+    const sub = service.remindCounter$.subscribe((v) => values.push(v));
+    tick(TRACKING_REMINDER_MIN_TIME + 1000);
+    expect(values).toEqual([]);
+
+    logicalDay = '2026-07-28';
+    tick(60 * 1000);
+    tick(TRACKING_REMINDER_MIN_TIME + 1000);
+    expect(values.length).toBeGreaterThan(0);
+
+    sub.unsubscribe();
+    discardPeriodicTasks();
+  }));
+
+  it('reads a persisted pause on initialization', fakeAsync(() => {
+    localStorage.setItem(LS.TRACKING_REMINDER_PAUSED_DAY, '2024-01-19');
+
+    const values: number[] = [];
+    const sub = service.remindCounter$.subscribe((v) => values.push(v));
+    tick(TRACKING_REMINDER_MIN_TIME + 1000);
+    expect(values).toEqual([]);
+
+    sub.unsubscribe();
+    discardPeriodicTasks();
+  }));
+
+  it('suppresses reminders when the current time falls outside enabled work hours', fakeAsync(() => {
+    const now = new Date();
+    const minutesFromHours = now.getHours() * 60;
+    const currentMinute = minutesFromHours + now.getMinutes();
+    const toClockString = (minutes: number): string => {
+      const normalizedMinutes = minutes % (24 * 60);
+      const hours = Math.floor(normalizedMinutes / 60);
+      const minute = normalizedMinutes % 60;
+      return `${hours.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    };
+    const workStart = toClockString(currentMinute + 1);
+    const workEnd = toClockString(currentMinute + 2);
+    cfg$.next(
+      createMockCfg({
+        schedule: {
+          isWorkStartEndEnabled: true,
+          workStart,
+          workEnd,
+          isLunchBreakEnabled: false,
+          lunchBreakStart: '12:00',
+          lunchBreakEnd: '13:00',
+        },
+      }),
+    );
+
+    const values: number[] = [];
+    const sub = service.remindCounter$.subscribe((v) => values.push(v));
+    tick(TRACKING_REMINDER_MIN_TIME + 1000);
+    expect(values).toEqual([]);
 
     sub.unsubscribe();
     discardPeriodicTasks();

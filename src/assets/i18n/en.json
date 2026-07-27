@@ -2171,7 +2171,8 @@
       "B_TTR": {
         "ADD_TO_TASK": "Add to Task",
         "MSG": "You have not been tracking time for {{time}}",
-        "MSG_WITHOUT_TIME": "You have not been tracking time"
+        "MSG_WITHOUT_TIME": "You have not been tracking time",
+        "PAUSE_UNTIL_TOMORROW": "Pause until tomorrow"
       },
       "D_ARCHIVE_COMPRESS": {
         "BTN_COMPRESS": "Compress Archive",
