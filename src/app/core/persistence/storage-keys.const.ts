@@ -53,6 +53,10 @@ export enum LS {
   // rather than nagged every sync or forgotten forever. Device-local, no telemetry.
   SUPER_SYNC_ENCRYPTION_MIGRATION_SNOOZE_UNTIL = 'SUP_SUPER_SYNC_ENCRYPTION_MIGRATION_SNOOZE_UNTIL',
 
+  // Logical day on which the user paused tracking reminders. This is device-local
+  // because reminder noise is a local workflow preference, not user data to sync.
+  TRACKING_REMINDER_PAUSED_DAY = 'SUP_TRACKING_REMINDER_PAUSED_DAY',
+
   SELECTED_TIME_VIEW = 'SELECTED_TIME_VIEW',
   SCHEDULE_WEEK_ROW_HEIGHT = 'SUP_SCHEDULE_WEEK_ROW_HEIGHT',
 

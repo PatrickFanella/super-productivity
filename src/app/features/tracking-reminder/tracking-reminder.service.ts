@@ -9,6 +9,7 @@ import {
   first,
   map,
   shareReplay,
+  startWith,
   switchMap,
   throttleTime,
   withLatestFrom,
@@ -36,6 +37,8 @@ import {
 } from '../focus-mode/store/focus-mode.selectors';
 import { selectIsFocusModeEnabled } from '../config/store/global-config.reducer';
 import { FocusScreen } from '../focus-mode/focus-mode.model';
+import { LS } from '../../core/persistence/storage-keys.const';
+import { isTrackingReminderSuppressedBySchedule } from './tracking-reminder.util';
 
 const DESKTOP_NOTIFICATION_THROTTLE = 60 * 1000;
 
@@ -63,14 +66,15 @@ export class TrackingReminderService {
 
   _manualReset$: Subject<void> = new Subject();
 
+  private _pauseStatusChanged$ = new Subject<void>();
+
+  private _reminderStatusTick$ = realTimer$(60 * 1000).pipe(startWith(0));
+
   _resetableCounter$: Observable<number> = merge(of('INITIAL'), this._manualReset$).pipe(
     switchMap(() => this._counter$),
   );
 
-  _hideTrigger$: Observable<any> = merge(
-    this._taskService.currentTaskId$.pipe(filter((currentId) => !!currentId)),
-    this._idleService.isIdle$.pipe(filter((isIdle) => isIdle)),
-  );
+  private _pausedDayInMemory?: string;
 
   private _isFocusModeActive$: Observable<boolean> = combineLatest([
     this._store.select(selectIsFocusModeEnabled),
@@ -86,10 +90,35 @@ export class TrackingReminderService {
     distinctUntilChanged(),
   );
 
-  remindCounter$: Observable<number> = this._cfg$.pipe(
-    switchMap((cfg) =>
+  private _isReminderSuppressed$: Observable<boolean> = combineLatest([
+    this._globalConfigService.cfg$,
+    merge(this._reminderStatusTick$, this._pauseStatusChanged$),
+  ]).pipe(
+    map(([cfg]) => {
+      const isPausedUntilTomorrow = this._getPausedDay() === this._dateService.todayStr();
+      return (
+        isPausedUntilTomorrow ||
+        isTrackingReminderSuppressedBySchedule(cfg.schedule, new Date())
+      );
+    }),
+    distinctUntilChanged(),
+    shareReplay(1),
+  );
+
+  _hideTrigger$: Observable<unknown> = merge(
+    this._taskService.currentTaskId$.pipe(filter((currentId) => !!currentId)),
+    this._idleService.isIdle$.pipe(filter((isIdle) => isIdle)),
+    this._isReminderSuppressed$.pipe(filter((isSuppressed) => isSuppressed)),
+  );
+
+  remindCounter$: Observable<number> = combineLatest([
+    this._cfg$,
+    this._isReminderSuppressed$,
+  ]).pipe(
+    switchMap(([cfg, isReminderSuppressed]) =>
       !cfg?.isTrackingReminderEnabled ||
-      (!cfg.isTrackingReminderShowOnMobile && IS_TOUCH_ONLY)
+      (!cfg.isTrackingReminderShowOnMobile && IS_TOUCH_ONLY) ||
+      isReminderSuppressed
         ? EMPTY
         : combineLatest([
             this._taskService.currentTaskId$,
@@ -168,6 +197,10 @@ export class TrackingReminderService {
         label: T.G.DISMISS,
         fn: () => this._dismissBanner(),
       },
+      action3: {
+        label: T.F.TIME_TRACKING.B_TTR.PAUSE_UNTIL_TOMORROW,
+        fn: () => this.pauseRemindersUntilTomorrow(),
+      },
     });
 
     // Handle desktop notification if enabled
@@ -227,6 +260,31 @@ export class TrackingReminderService {
   private _dismissBanner(): void {
     this._bannerService.dismiss(BannerId.StartTrackingReminder);
     this._manualReset$.next();
+  }
+
+  pauseRemindersUntilTomorrow(): void {
+    const pausedDay = this._dateService.todayStr();
+    this._pausedDayInMemory = pausedDay;
+    try {
+      localStorage.setItem(LS.TRACKING_REMINDER_PAUSED_DAY, pausedDay);
+      this._pauseStatusChanged$.next();
+    } catch {
+      // A private browser context can deny local storage, so retain this session's pause.
+      this._pauseStatusChanged$.next();
+    }
+    this._dismissBanner();
+  }
+
+  private _getPausedDay(): string | null {
+    try {
+      return (
+        localStorage.getItem(LS.TRACKING_REMINDER_PAUSED_DAY) ??
+        this._pausedDayInMemory ??
+        null
+      );
+    } catch {
+      return this._pausedDayInMemory ?? null;
+    }
   }
 
   private _showNotification(durationStr: string): void {
