@@ -59,23 +59,29 @@
   max-width: 600px;
 }
 
-.mode-settings-btn {
-  // Match the in-progress session controls (.bottom-controls): 56px hit area,
-  // 32px icon, --s2 gap to the FAB — so the cog's size and spacing read the
-  // same before and during a session.
+.mode-action-buttons {
   position: absolute;
   left: 100%;
   margin-left: var(--s2);
-  width: 56px !important;
-  height: 56px !important;
+  display: flex;
+  align-items: center;
+  gap: var(--s);
+}
+
+.mode-settings-btn {
+  // Match the in-progress session controls (.bottom-controls): 56px hit area
+  // and 32px icon, while the parent row keeps multiple actions separated.
+  flex: 0 0 var(--s7);
+  width: var(--s7) !important;
+  height: var(--s7) !important;
   opacity: var(--revealed-opacity);
   transition: var(--transition-standard);
   pointer-events: var(--revealed-pointer-events);
 
   mat-icon {
-    font-size: 32px !important;
-    width: 32px !important;
-    height: 32px !important;
+    font-size: var(--s4) !important;
+    width: var(--s4) !important;
+    height: var(--s4) !important;
   }
 }
 
@@ -200,10 +206,9 @@
   }
 }
 
-// ========== ROW 4 (Preparation): PLAY BUTTON + SETTINGS COG ==========
-// Content-height bottom row. The cog floats next to the FAB via absolute
-// positioning (anchored to this relative row), so adding/removing it never
-// shifts the centered FAB.
+// ========== ROW 4 (Preparation): PLAY BUTTON + SECONDARY ACTIONS ==========
+// Content-height bottom row. Secondary actions float in a flex row next to the
+// FAB, so adding/removing them never shifts the centered primary action.
 .play-actions {
   position: relative;
   display: flex;

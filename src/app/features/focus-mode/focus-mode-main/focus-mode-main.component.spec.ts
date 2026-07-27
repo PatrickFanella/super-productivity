@@ -678,6 +678,20 @@ describe('FocusModeMainComponent', () => {
         'F.FOCUS_MODE.POMODORO_SETTINGS',
       ]);
     });
+
+    it('should lay out preparation actions without overlapping', () => {
+      const secondaryButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.mode-action-buttons button'),
+      ) as HTMLButtonElement[];
+
+      expect(secondaryButtons.length).toBe(2);
+
+      const breakButtonRect = secondaryButtons[0].getBoundingClientRect();
+      const settingsButtonRect = secondaryButtons[1].getBoundingClientRect();
+
+      expect(breakButtonRect.width).toBeGreaterThan(0);
+      expect(breakButtonRect.right).toBeLessThanOrEqual(settingsButtonRect.left);
+    });
   });
 
   describe('startManualBreak', () => {
