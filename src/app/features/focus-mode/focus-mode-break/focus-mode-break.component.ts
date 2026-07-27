@@ -79,6 +79,7 @@ export class FocusModeBreakComponent {
   readonly isPomodoro = computed(
     () => this.focusModeService.mode() === FocusModeMode.Pomodoro,
   );
+  readonly isManualBreak = this.focusModeService.isManualBreak;
 
   // currentCycle increments at the end of a focus session, so during the
   // break the store has already moved on. getBreakCycle subtracts 1 (clamped)
@@ -100,11 +101,23 @@ export class FocusModeBreakComponent {
   });
 
   skipBreak(): void {
-    this._store.dispatch(skipBreak({ pausedTaskId: this._pausedTaskId() }));
+    this._store.dispatch(
+      skipBreak({
+        pausedTaskId: this._pausedTaskId(),
+        completedDuration: this.focusModeService.timeElapsed(),
+        isManualBreak: this.isManualBreak(),
+      }),
+    );
   }
 
   completeBreak(): void {
-    this._store.dispatch(completeBreak({ pausedTaskId: this._pausedTaskId() }));
+    this._store.dispatch(
+      completeBreak({
+        pausedTaskId: this._pausedTaskId(),
+        completedDuration: this.focusModeService.timeElapsed(),
+        isManualBreak: this.isManualBreak(),
+      }),
+    );
   }
 
   pauseBreak(): void {

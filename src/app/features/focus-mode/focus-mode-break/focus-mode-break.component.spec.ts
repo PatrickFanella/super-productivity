@@ -30,7 +30,9 @@ describe('FocusModeBreakComponent', () => {
   let mockTaskService: jasmine.SpyObj<any>;
   let mockFocusModeService: {
     timeRemaining: Signal<number>;
+    timeElapsed: Signal<number>;
     progress: Signal<number>;
+    isManualBreak: Signal<boolean>;
     isBreakLong: Signal<boolean>;
     isSessionPaused: Signal<boolean>;
     isSessionRunning: Signal<boolean>;
@@ -59,7 +61,9 @@ describe('FocusModeBreakComponent', () => {
 
     mockFocusModeService = {
       timeRemaining: signal(300000),
+      timeElapsed: signal(120000),
       progress: signal(0.5),
+      isManualBreak: signal(false),
       isBreakLong: signal(false),
       isSessionPaused: signal(false),
       isSessionRunning: signal(false),
@@ -105,7 +109,11 @@ describe('FocusModeBreakComponent', () => {
       component.skipBreak();
 
       expect(mockStore.dispatch).toHaveBeenCalledWith(
-        skipBreak({ pausedTaskId: mockPausedTaskId }),
+        skipBreak({
+          pausedTaskId: mockPausedTaskId,
+          completedDuration: 120000,
+          isManualBreak: false,
+        }),
       );
     });
   });
@@ -115,7 +123,11 @@ describe('FocusModeBreakComponent', () => {
       component.completeBreak();
 
       expect(mockStore.dispatch).toHaveBeenCalledWith(
-        completeBreak({ pausedTaskId: mockPausedTaskId }),
+        completeBreak({
+          pausedTaskId: mockPausedTaskId,
+          completedDuration: 120000,
+          isManualBreak: false,
+        }),
       );
     });
   });

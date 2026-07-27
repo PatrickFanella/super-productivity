@@ -45,13 +45,18 @@ const createWorkTimer = (duration: number): TimerState => ({
   purpose: 'work',
 });
 
-const createBreakTimer = (duration: number, isLong = false): TimerState => ({
+const createBreakTimer = (
+  duration: number,
+  isLong = false,
+  isManualBreak = false,
+): TimerState => ({
   isRunning: true,
   startedAt: Date.now(),
   elapsed: 0,
   duration,
   purpose: 'break',
   isLongBreak: isLong,
+  isManualBreak,
 });
 
 const updateTimer = (timer: TimerState): TimerState => {
@@ -214,10 +219,11 @@ export const focusModeReducer = createReducer(
   })),
 
   // Break handling
-  on(a.startBreak, (state, { duration, isLongBreak, pausedTaskId }) => {
+  on(a.startBreak, (state, { duration, isLongBreak, isManualBreak, pausedTaskId }) => {
     const timer = createBreakTimer(
       duration || FOCUS_MODE_DEFAULTS.SHORT_BREAK_DURATION,
       isLongBreak || false,
+      isManualBreak || false,
     );
 
     return {

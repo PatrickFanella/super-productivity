@@ -12,29 +12,26 @@ import { NotifyService } from '../../core/notify/notify.service';
 import { BannerService } from '../../core/banner/banner.service';
 import { ChromeExtensionInterfaceService } from '../../core/chrome-extension-interface/chrome-extension-interface.service';
 import { UiHelperService } from '../ui-helper/ui-helper.service';
-import { SnackService } from '../../core/snack/snack.service';
+import { Store } from '@ngrx/store';
 import { LOCAL_ACTIONS } from '../../util/local-actions.token';
 import { BannerId } from '../../core/banner/banner.model';
-import { T } from '../../t.const';
+import { startManualBreak } from '../focus-mode/store/focus-mode.actions';
 
 describe('TakeABreakService', () => {
   let service: TakeABreakService;
   let taskService: jasmine.SpyObj<TaskService>;
-  let snackService: jasmine.SpyObj<SnackService>;
+  let store: jasmine.SpyObj<Store>;
   let bannerService: jasmine.SpyObj<BannerService>;
   let actions$: Subject<Action>;
 
   beforeEach(() => {
     actions$ = new Subject<Action>();
-    taskService = jasmine.createSpyObj<TaskService>('TaskService', [
-      'pauseCurrent',
-      'currentTaskId',
-    ]);
+    taskService = jasmine.createSpyObj<TaskService>('TaskService', ['currentTaskId']);
     // `currentTaskId$` is read as a property during construction.
     (taskService as unknown as { currentTaskId$: unknown }).currentTaskId$ = of(null);
     taskService.currentTaskId.and.returnValue(null);
 
-    snackService = jasmine.createSpyObj<SnackService>('SnackService', ['open']);
+    store = jasmine.createSpyObj<Store>('Store', ['dispatch']);
     bannerService = jasmine.createSpyObj<BannerService>('BannerService', [
       'open',
       'dismiss',
@@ -44,7 +41,7 @@ describe('TakeABreakService', () => {
       providers: [
         TakeABreakService,
         { provide: TaskService, useValue: taskService },
-        { provide: SnackService, useValue: snackService },
+        { provide: Store, useValue: store },
         { provide: BannerService, useValue: bannerService },
         { provide: LOCAL_ACTIONS, useValue: actions$ },
         { provide: GlobalTrackingIntervalService, useValue: { tick$: new Subject() } },
@@ -54,6 +51,7 @@ describe('TakeABreakService', () => {
           useValue: {
             cfg$: of({ takeABreak: { isTakeABreakEnabled: true } }),
             takeABreak$: of({ isTakeABreakEnabled: true }),
+            pomodoroConfig: () => ({ breakDuration: 10 * 60 * 1000 }),
             idle$: of({ isEnableIdleTimeTracking: false }),
             sound$: of({ breakReminderSound: null, volume: 0 }),
           },
@@ -130,20 +128,11 @@ describe('TakeABreakService', () => {
   });
 
   describe('startBreak()', () => {
-    it('pauses tracking', () => {
-      service.startBreak();
-      expect(taskService.pauseCurrent).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows an encouraging snack so the click clearly does something', () => {
+    it('starts a timed focus-mode break', () => {
       service.startBreak();
 
-      expect(snackService.open).toHaveBeenCalledTimes(1);
-      expect(snackService.open).toHaveBeenCalledWith(
-        jasmine.objectContaining({
-          type: 'SUCCESS',
-          msg: T.F.TIME_TRACKING.B.BREAK_SNACK,
-        }),
+      expect(store.dispatch).toHaveBeenCalledWith(
+        startManualBreak({ duration: 10 * 60 * 1000 }),
       );
     });
 
