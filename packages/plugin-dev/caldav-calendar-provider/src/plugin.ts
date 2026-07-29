@@ -153,6 +153,7 @@ const foldIcalLine = (line: string): string => {
 
 interface ParsedVEvent {
   uid: string;
+  superProductivityTaskId: string;
   summary: string;
   description: string;
   dtstart: string;
@@ -164,6 +165,9 @@ interface ParsedVEvent {
   lastModified: string;
   etag: string;
 }
+
+const SUPER_PRODUCTIVITY_PRODID = '-//Super Productivity//CalDAV Plugin//EN';
+const SUPER_PRODUCTIVITY_TASK_ID_PROP = 'X-SUPER-PRODUCTIVITY-TASK-ID';
 
 /** Extract a property value from unfolded iCal lines */
 const getIcalProp = (lines: string[], name: string): string => {
@@ -323,6 +327,7 @@ const parseVEvents = (icalData: string): ParsedVEvent[] => {
     const dtendRaw = getIcalProp(lines, 'DTEND');
     events.push({
       uid: getIcalProp(lines, 'UID'),
+      superProductivityTaskId: getIcalProp(lines, SUPER_PRODUCTIVITY_TASK_ID_PROP),
       summary: unescapeIcalText(getIcalProp(lines, 'SUMMARY')),
       description: unescapeIcalText(getIcalProp(lines, 'DESCRIPTION')),
       dtstart: dtstartRaw,
@@ -349,12 +354,13 @@ const buildICalEvent = (event: {
   dtend?: string;
   dtendParam?: string;
   status?: string;
+  superProductivityTaskId?: string;
 }): string => {
   const now = toIcalUtcDateTime(new Date());
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Super Productivity//CalDAV Plugin//EN',
+    `PRODID:${SUPER_PRODUCTIVITY_PRODID}`,
     'BEGIN:VEVENT',
     foldIcalLine(`UID:${event.uid}`),
     `DTSTAMP:${now}`,
@@ -377,6 +383,15 @@ const buildICalEvent = (event: {
   }
   if (event.status) {
     lines.push(`STATUS:${event.status}`);
+  }
+  if (event.superProductivityTaskId) {
+    lines.push(
+      foldIcalLine(
+        `${SUPER_PRODUCTIVITY_TASK_ID_PROP}:${escapeIcalText(
+          event.superProductivityTaskId,
+        )}`,
+      ),
+    );
   }
   lines.push(`LAST-MODIFIED:${now}`);
   lines.push('END:VEVENT');
@@ -513,6 +528,25 @@ const buildCalendarQueryBody = (start: string, end: string): string =>
   </c:filter>
 </c:calendar-query>`;
 
+/** Build a single-resource calendar-multiget request for an atomic body + ETag read. */
+const buildCalendarMultigetBody = (eventHref: string): string =>
+  `<?xml version="1.0" encoding="UTF-8"?>
+<c:calendar-multiget xmlns:d="DAV:" xmlns:c="${CALDAV_NS}">
+  <d:prop>
+    <d:getetag/>
+    <c:calendar-data/>
+  </d:prop>
+  <d:href>${escapeXmlText(eventHref)}</d:href>
+</c:calendar-multiget>`;
+
+const escapeXmlText = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
 /** Get text content from an XML element, searching by local name across namespaces */
 const getXmlText = (parent: Element, localName: string): string => {
   // Try known namespaces
@@ -605,7 +639,7 @@ const parseEventResponses = (xml: string): CalendarEventResponse[] => {
   for (let i = 0; i < responses.length; i++) {
     const resp = responses[i];
     const rawHref = getXmlText(resp, 'href');
-    const etag = getXmlText(resp, 'getetag').replace(/"/g, '');
+    const etag = getXmlText(resp, 'getetag').trim();
     const calendarData = getXmlText(resp, 'calendar-data');
     if (rawHref && calendarData) {
       // Normalize href to pathname so IDs are consistent with createIssue
@@ -631,6 +665,18 @@ const caldavHeaders = (extra?: Record<string, string>): Record<string, string> =
   ...extra,
 });
 
+const createHttpStatusError = (message: string, status: number): Error =>
+  Object.assign(new Error(message), { status });
+
+const assertStrongEtag = (etag: string): string => {
+  if (!/^"[\x21\x23-\x7e\x80-\xff]*"$/.test(etag)) {
+    throw new Error(
+      '[CalDAV] Server did not provide a strong ETag; refusing an unsafe write',
+    );
+  }
+  return etag;
+};
+
 /**
  * Resolve a server-supplied href against the configured server origin and
  * refuse anything that escapes it. Discovery follows hrefs that the (untrusted)
@@ -648,6 +694,42 @@ const resolveHref = (cfg: CaldavCalendarConfig, href: string): string => {
     throw new Error('[CalDAV] Refusing cross-origin href');
   }
   return resolved.toString();
+};
+
+/**
+ * Fetch one VEVENT body and its strong ETag in the same CalDAV response.
+ * Keeping these values atomic avoids the GET-then-PROPFIND race that could
+ * otherwise pair an old body with a newer ETag and overwrite someone else's edit.
+ */
+const fetchEventWithEtag = async (
+  http: PluginHttp,
+  cfg: CaldavCalendarConfig,
+  calendarHref: string,
+  eventHref: string,
+): Promise<CalendarEventResponse> => {
+  if (!calendarHref) {
+    throw new Error('[CalDAV] Event is missing its calendar collection');
+  }
+  const eventPath = new URL(resolveHref(cfg, eventHref)).pathname;
+  const responseXml = await http.request<string>(
+    'REPORT',
+    resolveHref(cfg, calendarHref),
+    buildCalendarMultigetBody(eventPath),
+    {
+      headers: caldavHeaders(),
+      responseType: 'text',
+    },
+  );
+  const matches = parseEventResponses(responseXml).filter(
+    (event) => new URL(resolveHref(cfg, event.href)).pathname === eventPath,
+  );
+  if (matches.length === 0) {
+    throw createHttpStatusError('[CalDAV] Event no longer exists', 404);
+  }
+  if (matches.length !== 1) {
+    throw new Error('[CalDAV] Server returned an ambiguous event response');
+  }
+  return { ...matches[0], etag: assertStrongEtag(matches[0].etag) };
 };
 
 /** Build PROPFIND body to bootstrap discovery: principal + calendar-home-set */
@@ -1096,6 +1178,24 @@ const buildNewEventUrl = (
  * CalDAV UIDs are opaque strings with no charset restriction (unlike Google Calendar). */
 const taskIdToCaldavUid = (taskId: string): string => `sp-${taskId}@super-productivity`;
 
+const isOwnedTimeBlock = (
+  calendarData: string,
+  expectedUid: string,
+  taskId: string,
+  allowLegacyMigration: boolean,
+): boolean => {
+  const events = parseVEvents(calendarData);
+  if (events.length !== 1 || events[0].uid !== expectedUid) return false;
+  if (events[0].superProductivityTaskId === taskId) return true;
+
+  // Compatibility for time blocks created before the explicit ownership marker.
+  // Requiring both the deterministic UID and our exact PRODID keeps this migration
+  // narrow; the next successful update adds the marker.
+  if (!allowLegacyMigration || events[0].superProductivityTaskId) return false;
+  const calendarLines = unfoldIcal(calendarData).split(/\r?\n/);
+  return getIcalProp(calendarLines, 'PRODID') === SUPER_PRODUCTIVITY_PRODID;
+};
+
 const isHttpStatus = (err: unknown, status: number): boolean =>
   typeof err === 'object' &&
   err !== null &&
@@ -1407,16 +1507,20 @@ PluginAPI.registerIssueProvider({
     http: PluginHttp,
   ): Promise<void> {
     const cfg = config as unknown as CaldavCalendarConfig;
-    const { eventHref, occurrenceMs } = parseCompoundId(id, getWriteCalendarId(cfg));
+    const { calendarHref, eventHref, occurrenceMs } = parseCompoundId(
+      id,
+      getWriteCalendarId(cfg),
+    );
     // Editing one occurrence would rewrite the shared master (whole series).
     if (occurrenceMs !== undefined) throw unsupportedOccurrenceWriteError('edit');
     const eventUrl = resolveHref(cfg, eventHref);
 
-    // Fetch current iCal data
-    const currentIcal = await http.get<string>(eventUrl, { responseType: 'text' });
-    // Try to get etag from a HEAD-like approach — we'll use If-Match: * as fallback
-    // The etag was in the REPORT response, but we don't have it here.
-    // Use * to indicate we want to update regardless.
+    const { calendarData: currentIcal, etag } = await fetchEventWithEtag(
+      http,
+      cfg,
+      calendarHref,
+      eventHref,
+    );
 
     const icalChanges: Record<string, string> = {};
 
@@ -1478,7 +1582,10 @@ PluginAPI.registerIssueProvider({
 
     const modifiedIcal = modifyICalEvent(currentIcal, icalChanges);
     await http.put(eventUrl, modifiedIcal, {
-      headers: { 'Content-Type': 'text/calendar; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'If-Match': etag,
+      },
       responseType: 'text',
     });
   },
@@ -1622,23 +1729,57 @@ PluginAPI.registerIssueProvider({
       const summary = eventData.isDone ? `[DONE] ${eventData.title}` : eventData.title;
       const startDate = new Date(eventData.dueWithTime);
       const endDate = new Date(eventData.dueWithTime + eventData.durationMs);
-
-      const icalData = buildICalEvent({
-        uid,
-        summary,
-        dtstart: toIcalUtcDateTime(startDate),
-        dtend: toIcalUtcDateTime(endDate),
-      });
-
       const eventUrl = buildNewEventUrl(cfg, calendarHref, uid);
-      // CalDAV PUT is inherently an upsert — creates if absent, replaces if
-      // present (single idempotent write; no insert/patch double-write).
-      await withTransientRetry(() =>
-        http.put(eventUrl, icalData, {
-          headers: { 'Content-Type': 'text/calendar; charset=utf-8' },
+      const eventHref = new URL(eventUrl).pathname;
+      const dtstart = toIcalUtcDateTime(startDate);
+      const dtend = toIcalUtcDateTime(endDate);
+
+      await withTransientRetry(async () => {
+        const newIcal = buildICalEvent({
+          uid,
+          summary,
+          dtstart,
+          dtend,
+          superProductivityTaskId: taskId,
+        });
+        try {
+          await http.put(eventUrl, newIcal, {
+            headers: {
+              'Content-Type': 'text/calendar; charset=utf-8',
+              'If-None-Match': '*',
+            },
+            responseType: 'text',
+          });
+          return;
+        } catch (err: unknown) {
+          if (!isHttpStatus(err, 412)) throw err;
+        }
+
+        const { calendarData, etag } = await fetchEventWithEtag(
+          http,
+          cfg,
+          calendarHref,
+          eventHref,
+        );
+        if (!isOwnedTimeBlock(calendarData, uid, taskId, true)) {
+          throw new Error(
+            '[CalDAV] Time-block resource is not owned by Super Productivity',
+          );
+        }
+        const updatedIcal = modifyICalEvent(calendarData, {
+          SUMMARY: escapeIcalText(summary),
+          DTSTART: dtstart,
+          DTEND: dtend,
+          [SUPER_PRODUCTIVITY_TASK_ID_PROP]: escapeIcalText(taskId),
+        });
+        await http.put(eventUrl, updatedIcal, {
+          headers: {
+            'Content-Type': 'text/calendar; charset=utf-8',
+            'If-Match': etag,
+          },
           responseType: 'text',
-        }),
-      );
+        });
+      });
     },
 
     async deleteEvent(
@@ -1651,9 +1792,25 @@ PluginAPI.registerIssueProvider({
       if (!calendarHref) return; // No calendar configured — nothing to delete
       const uid = taskIdToCaldavUid(taskId);
       const eventUrl = buildNewEventUrl(cfg, calendarHref, uid);
+      const eventHref = new URL(eventUrl).pathname;
       await withTransientRetry(async () => {
+        let existing: CalendarEventResponse;
         try {
-          await http.delete(eventUrl, { responseType: 'text' });
+          existing = await fetchEventWithEtag(http, cfg, calendarHref, eventHref);
+        } catch (err: unknown) {
+          if (isHttpStatus(err, 404)) return;
+          throw err;
+        }
+        if (!isOwnedTimeBlock(existing.calendarData, uid, taskId, false)) {
+          throw new Error(
+            '[CalDAV] Time-block resource is not owned by Super Productivity',
+          );
+        }
+        try {
+          await http.delete(eventUrl, {
+            headers: { 'If-Match': existing.etag },
+            responseType: 'text',
+          });
         } catch (err: unknown) {
           if (!isHttpStatus(err, 404)) throw err;
         }
@@ -1667,10 +1824,17 @@ PluginAPI.registerIssueProvider({
     http: PluginHttp,
   ): Promise<void> {
     const cfg = config as unknown as CaldavCalendarConfig;
-    const { eventHref, occurrenceMs } = parseCompoundId(id, getWriteCalendarId(cfg));
+    const { calendarHref, eventHref, occurrenceMs } = parseCompoundId(
+      id,
+      getWriteCalendarId(cfg),
+    );
     // Deleting one occurrence would DELETE the shared master (whole series).
     if (occurrenceMs !== undefined) throw unsupportedOccurrenceWriteError('delete');
     const eventUrl = resolveHref(cfg, eventHref);
-    await http.delete(eventUrl, { responseType: 'text' });
+    const { etag } = await fetchEventWithEtag(http, cfg, calendarHref, eventHref);
+    await http.delete(eventUrl, {
+      headers: { 'If-Match': etag },
+      responseType: 'text',
+    });
   },
 });

@@ -3,6 +3,24 @@ import type { IssueProviderPluginDefinition } from '@super-productivity/plugin-a
 
 let definition: IssueProviderPluginDefinition;
 
+const calendarMultigetResponse = (
+  href: string,
+  calendarData: string,
+  etag = '"etag-1"',
+): string => `<?xml version="1.0" encoding="UTF-8"?>
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:response>
+    <d:href>${href}</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:getetag>${etag}</d:getetag>
+        <c:calendar-data><![CDATA[${calendarData}]]></c:calendar-data>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>`;
+
 beforeAll(async () => {
   (globalThis as any).PluginAPI = {
     registerIssueProvider: vi.fn((def: IssueProviderPluginDefinition) => {
@@ -258,7 +276,10 @@ describe('CalDAV Calendar Plugin', () => {
       serverUrl: 'https://cloud.example.com/dav',
       username: 'user',
       password: 'pass',
+      writeCalendarId: '/dav/calendars/user/default/',
     };
+    const eventHref = '/dav/calendars/user/default/event-1.ics';
+    const eventId = `${cfg.writeCalendarId}::${eventHref}`;
 
     const sampleIcal = [
       'BEGIN:VCALENDAR',
@@ -283,27 +304,34 @@ describe('CalDAV Calendar Plugin', () => {
         put: vi.fn(),
         patch: vi.fn(),
         delete: vi.fn(),
-        request: vi.fn(),
+        request: vi
+          .fn()
+          .mockResolvedValue(calendarMultigetResponse(eventHref, sampleIcal)),
       };
     });
 
     it('should update summary when title changes', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { summary: 'New Title' },
         cfg as any,
         mockHttp as any,
       );
 
-      expect(mockHttp.get).toHaveBeenCalledTimes(1);
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
       expect(mockHttp.put).toHaveBeenCalledTimes(1);
-      const [, body] = mockHttp.put.mock.calls[0];
+      const [, body, opts] = mockHttp.put.mock.calls[0];
       expect(body).toContain('SUMMARY:New Title');
+      expect(opts.headers['If-Match']).toBe('"etag-1"');
+      const [method, , requestBody, requestOpts] = mockHttp.request.mock.calls[0];
+      expect(method).toBe('REPORT');
+      expect(requestBody).toContain('<c:calendar-multiget');
+      expect(requestOpts.headers.Depth).toBeUndefined();
     });
 
     it('should update description when notes change', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { description: 'New notes' },
         cfg as any,
         mockHttp as any,
@@ -317,7 +345,7 @@ describe('CalDAV Calendar Plugin', () => {
     it('should update DTSTART/DTEND for timed event changes', async () => {
       const startIso = '2026-03-20T14:00:00.000Z';
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { start_dateTime: startIso, duration_ms: 3600000 },
         cfg as any,
         mockHttp as any,
@@ -331,7 +359,7 @@ describe('CalDAV Calendar Plugin', () => {
 
     it('should update DTSTART/DTEND for all-day event changes', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { start_date: '2026-03-25' },
         cfg as any,
         mockHttp as any,
@@ -345,13 +373,13 @@ describe('CalDAV Calendar Plugin', () => {
 
     it('should update end when only duration changes', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { duration_ms: 7200000 },
         cfg as any,
         mockHttp as any,
       );
 
-      expect(mockHttp.get).toHaveBeenCalledTimes(1);
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
       expect(mockHttp.put).toHaveBeenCalledTimes(1);
       const [, body] = mockHttp.put.mock.calls[0];
       expect(body).toContain('DTEND:20260320T120000Z');
@@ -359,7 +387,7 @@ describe('CalDAV Calendar Plugin', () => {
 
     it('should not call put when no recognized fields changed', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { unknown_field: 'value' },
         cfg as any,
         mockHttp as any,
@@ -383,10 +411,12 @@ describe('CalDAV Calendar Plugin', () => {
         'END:VEVENT',
         'END:VCALENDAR',
       ].join('\r\n');
-      mockHttp.get = vi.fn().mockResolvedValue(icalWithDuration);
+      mockHttp.request = vi
+        .fn()
+        .mockResolvedValue(calendarMultigetResponse(eventHref, icalWithDuration));
 
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { start_dateTime: '2026-03-20T14:00:00.000Z', duration_ms: 3600000 },
         cfg as any,
         mockHttp as any,
@@ -399,7 +429,7 @@ describe('CalDAV Calendar Plugin', () => {
 
     it('should convert to all-day event when start_dateTime is null (unschedule)', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { start_dateTime: null },
         cfg as any,
         mockHttp as any,
@@ -413,7 +443,7 @@ describe('CalDAV Calendar Plugin', () => {
 
     it('should bump SEQUENCE on update', async () => {
       await definition.updateIssue!(
-        'event-1',
+        eventId,
         { summary: 'Updated' },
         cfg as any,
         mockHttp as any,
@@ -421,6 +451,56 @@ describe('CalDAV Calendar Plugin', () => {
 
       const [, body] = mockHttp.put.mock.calls[0];
       expect(body).toContain('SEQUENCE:1');
+    });
+
+    it('surfaces a concurrent update without retrying or overwriting', async () => {
+      mockHttp.put.mockRejectedValue({ status: 412 });
+
+      await expect(
+        definition.updateIssue!(
+          eventId,
+          { summary: 'Conflicting update' },
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toMatchObject({ status: 412 });
+
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
+      expect(mockHttp.put).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to write when the server does not provide a strong ETag', async () => {
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(eventHref, sampleIcal, 'W/"weak-etag"'),
+      );
+
+      await expect(
+        definition.updateIssue!(
+          eventId,
+          { summary: 'Unsafe update' },
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toThrow(/strong ETag/);
+
+      expect(mockHttp.put).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unquoted ETag instead of sending an invalid If-Match header', async () => {
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(eventHref, sampleIcal, 'unquoted-etag'),
+      );
+
+      await expect(
+        definition.updateIssue!(
+          eventId,
+          { summary: 'Unsafe update' },
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toThrow(/strong ETag/);
+
+      expect(mockHttp.put).not.toHaveBeenCalled();
     });
   });
 
@@ -453,6 +533,7 @@ describe('CalDAV Calendar Plugin', () => {
       expect(body).toContain('SUMMARY:New Task');
       expect(body).toContain('DTSTART;VALUE=DATE:');
       expect(body).toContain('DTEND;VALUE=DATE:');
+      expect(body).not.toContain('X-SUPER-PRODUCTIVITY-TASK-ID');
       expect(opts.headers['If-None-Match']).toBe('*');
       expect(result.issueId).toBeDefined();
       expect(result.issueData.title).toBe('New Task');
@@ -461,13 +542,26 @@ describe('CalDAV Calendar Plugin', () => {
 
   describe('deleteIssue', () => {
     it('should call DELETE on the event URL', async () => {
+      const eventHref = '/dav/calendars/user/default/event-uid.ics';
+      const calendarData = [
+        'BEGIN:VCALENDAR',
+        'BEGIN:VEVENT',
+        'UID:event-uid',
+        'SUMMARY:Delete me',
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n');
       const mockHttp = {
         get: vi.fn(),
         post: vi.fn(),
         put: vi.fn(),
         patch: vi.fn(),
         delete: vi.fn(),
-        request: vi.fn(),
+        request: vi
+          .fn()
+          .mockResolvedValue(
+            calendarMultigetResponse(eventHref, calendarData, '"delete-etag"'),
+          ),
       };
 
       await definition.deleteIssue!(
@@ -481,8 +575,9 @@ describe('CalDAV Calendar Plugin', () => {
       );
 
       expect(mockHttp.delete).toHaveBeenCalledTimes(1);
-      const [url] = mockHttp.delete.mock.calls[0];
+      const [url, opts] = mockHttp.delete.mock.calls[0];
       expect(url).toContain('event-uid.ics');
+      expect(opts.headers['If-Match']).toBe('"delete-etag"');
     });
   });
 
@@ -916,7 +1011,9 @@ END:VCALENDAR</cal:calendar-data>
         put: vi.fn(),
         patch: vi.fn(),
         delete: vi.fn(),
-        request: vi.fn(),
+        request: vi
+          .fn()
+          .mockResolvedValue(calendarMultigetResponse(eventHref, timedMaster)),
       };
     });
 
@@ -1071,7 +1168,29 @@ END:VCALENDAR</cal:calendar-data>
       durationMs: 30 * 60 * 1000,
       isDone: false,
     };
-    let mockHttp: { get: any; post: any; put: any; patch: any; delete: any };
+    const eventHref = '/cal/sp-task-1%40super-productivity.ics';
+    const existingIcal = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'BEGIN:VEVENT',
+      'UID:sp-task-1@super-productivity',
+      'DTSTART:20260514T140000Z',
+      'DTEND:20260514T143000Z',
+      'SUMMARY:Old Task',
+      'X-SUPER-PRODUCTIVITY-TASK-ID:task-1',
+      'X-KEEP:remote-data',
+      'SEQUENCE:2',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    let mockHttp: {
+      get: any;
+      post: any;
+      put: any;
+      patch: any;
+      delete: any;
+      request: any;
+    };
 
     beforeEach(() => {
       mockHttp = {
@@ -1080,6 +1199,9 @@ END:VCALENDAR</cal:calendar-data>
         put: vi.fn().mockResolvedValue(''),
         patch: vi.fn(),
         delete: vi.fn(),
+        request: vi
+          .fn()
+          .mockResolvedValue(calendarMultigetResponse(eventHref, existingIcal)),
       };
     });
 
@@ -1087,7 +1209,7 @@ END:VCALENDAR</cal:calendar-data>
       vi.useRealTimers();
     });
 
-    it('does a single idempotent PUT (no double-write)', async () => {
+    it('creates a new time block without overwriting an existing resource', async () => {
       await definition.timeBlock!.upsertEvent(
         'task-1',
         eventData,
@@ -1096,7 +1218,116 @@ END:VCALENDAR</cal:calendar-data>
       );
 
       expect(mockHttp.put).toHaveBeenCalledTimes(1);
+      expect(mockHttp.put.mock.calls[0][2].headers['If-None-Match']).toBe('*');
+      expect(mockHttp.put.mock.calls[0][1]).toContain(
+        'X-SUPER-PRODUCTIVITY-TASK-ID:task-1',
+      );
+      expect(mockHttp.request).not.toHaveBeenCalled();
       expect(mockHttp.post).not.toHaveBeenCalled();
+    });
+
+    it('conditionally updates an existing owned time block and preserves remote data', async () => {
+      mockHttp.put.mockRejectedValueOnce({ status: 412 }).mockResolvedValueOnce('');
+
+      await definition.timeBlock!.upsertEvent(
+        'task-1',
+        eventData,
+        cfg as any,
+        mockHttp as any,
+      );
+
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
+      expect(mockHttp.put).toHaveBeenCalledTimes(2);
+      const [, updatedIcal, opts] = mockHttp.put.mock.calls[1];
+      expect(updatedIcal).toContain('SUMMARY:My Task');
+      expect(updatedIcal).toContain('X-KEEP:remote-data');
+      expect(updatedIcal).toContain('SEQUENCE:3');
+      expect(opts.headers['If-Match']).toBe('"etag-1"');
+    });
+
+    it('migrates a legacy owned time block by adding the ownership marker', async () => {
+      const legacyIcal = existingIcal
+        .replace(
+          'VERSION:2.0\r\n',
+          'VERSION:2.0\r\nPRODID:-//Super Productivity//CalDAV Plugin//EN\r\n',
+        )
+        .replace('X-SUPER-PRODUCTIVITY-TASK-ID:task-1\r\n', '');
+      mockHttp.put.mockRejectedValueOnce({ status: 412 }).mockResolvedValueOnce('');
+      mockHttp.request.mockResolvedValue(calendarMultigetResponse(eventHref, legacyIcal));
+
+      await definition.timeBlock!.upsertEvent(
+        'task-1',
+        eventData,
+        cfg as any,
+        mockHttp as any,
+      );
+
+      expect(mockHttp.put.mock.calls[1][1]).toContain(
+        'X-SUPER-PRODUCTIVITY-TASK-ID:task-1',
+      );
+    });
+
+    it('surfaces a conflict from the conditional update without retrying', async () => {
+      mockHttp.put
+        .mockRejectedValueOnce({ status: 412 })
+        .mockRejectedValueOnce({ status: 412 });
+
+      await expect(
+        definition.timeBlock!.upsertEvent(
+          'task-1',
+          eventData,
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toMatchObject({ status: 412 });
+
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
+      expect(mockHttp.put).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses to overwrite a foreign event at the deterministic time-block URL', async () => {
+      mockHttp.put.mockRejectedValueOnce({ status: 412 });
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(
+          eventHref,
+          existingIcal.replace(
+            'UID:sp-task-1@super-productivity',
+            'UID:someone-elses-event',
+          ),
+        ),
+      );
+
+      await expect(
+        definition.timeBlock!.upsertEvent(
+          'task-1',
+          eventData,
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toThrow(/not owned/);
+
+      expect(mockHttp.put).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a matching UID without the ownership marker or legacy PRODID', async () => {
+      mockHttp.put.mockRejectedValueOnce({ status: 412 });
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(
+          eventHref,
+          existingIcal.replace('X-SUPER-PRODUCTIVITY-TASK-ID:task-1\r\n', ''),
+        ),
+      );
+
+      await expect(
+        definition.timeBlock!.upsertEvent(
+          'task-1',
+          eventData,
+          cfg as any,
+          mockHttp as any,
+        ),
+      ).rejects.toThrow(/not owned/);
+
+      expect(mockHttp.put).toHaveBeenCalledTimes(1);
     });
 
     it('retries on a 429 (rate limited) and then succeeds', async () => {
@@ -1151,7 +1382,24 @@ END:VCALENDAR</cal:calendar-data>
       serverUrl: 'https://dav.example.com/',
       timeBlockCalendarId: 'https://dav.example.com/cal/',
     };
-    let mockHttp: { get: any; post: any; put: any; patch: any; delete: any };
+    const eventHref = '/cal/sp-task-1%40super-productivity.ics';
+    const existingIcal = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:sp-task-1@super-productivity',
+      'X-SUPER-PRODUCTIVITY-TASK-ID:task-1',
+      'SUMMARY:My Task',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    let mockHttp: {
+      get: any;
+      post: any;
+      put: any;
+      patch: any;
+      delete: any;
+      request: any;
+    };
 
     beforeEach(() => {
       mockHttp = {
@@ -1160,6 +1408,9 @@ END:VCALENDAR</cal:calendar-data>
         put: vi.fn(),
         patch: vi.fn(),
         delete: vi.fn().mockResolvedValue(''),
+        request: vi
+          .fn()
+          .mockResolvedValue(calendarMultigetResponse(eventHref, existingIcal)),
       };
     });
 
@@ -1168,11 +1419,12 @@ END:VCALENDAR</cal:calendar-data>
     });
 
     it('swallows a 404 (event already gone)', async () => {
-      mockHttp.delete.mockRejectedValue({ status: 404 });
+      mockHttp.request.mockRejectedValue({ status: 404 });
 
       await expect(
         definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any),
       ).resolves.toBeUndefined();
+      expect(mockHttp.delete).not.toHaveBeenCalled();
     });
 
     it('retries on a 503 and then succeeds', async () => {
@@ -1183,6 +1435,7 @@ END:VCALENDAR</cal:calendar-data>
       await vi.runAllTimersAsync();
       await p;
 
+      expect(mockHttp.request).toHaveBeenCalledTimes(2);
       expect(mockHttp.delete).toHaveBeenCalledTimes(2);
     });
 
@@ -1193,6 +1446,63 @@ END:VCALENDAR</cal:calendar-data>
         definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any),
       ).rejects.toBeDefined();
       expect(mockHttp.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes an owned time block with its fresh ETag', async () => {
+      await definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any);
+
+      expect(mockHttp.request).toHaveBeenCalledTimes(1);
+      expect(mockHttp.delete).toHaveBeenCalledTimes(1);
+      expect(mockHttp.delete.mock.calls[0][1].headers['If-Match']).toBe('"etag-1"');
+    });
+
+    it('refuses to delete a foreign event at the deterministic time-block URL', async () => {
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(
+          eventHref,
+          existingIcal.replace(
+            'UID:sp-task-1@super-productivity',
+            'UID:someone-elses-event',
+          ),
+        ),
+      );
+
+      await expect(
+        definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any),
+      ).rejects.toThrow(/not owned/);
+
+      expect(mockHttp.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a matching UID without an ownership marker', async () => {
+      mockHttp.request.mockResolvedValue(
+        calendarMultigetResponse(
+          eventHref,
+          existingIcal.replace('X-SUPER-PRODUCTIVITY-TASK-ID:task-1\r\n', ''),
+        ),
+      );
+
+      await expect(
+        definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any),
+      ).rejects.toThrow(/not owned/);
+
+      expect(mockHttp.delete).not.toHaveBeenCalled();
+    });
+
+    it('does not delete a legacy markerless event even when its PRODID matches', async () => {
+      const legacyIcal = existingIcal
+        .replace(
+          'BEGIN:VCALENDAR\r\n',
+          'BEGIN:VCALENDAR\r\nPRODID:-//Super Productivity//CalDAV Plugin//EN\r\n',
+        )
+        .replace('X-SUPER-PRODUCTIVITY-TASK-ID:task-1\r\n', '');
+      mockHttp.request.mockResolvedValue(calendarMultigetResponse(eventHref, legacyIcal));
+
+      await expect(
+        definition.timeBlock!.deleteEvent('task-1', cfg as any, mockHttp as any),
+      ).rejects.toThrow(/not owned/);
+
+      expect(mockHttp.delete).not.toHaveBeenCalled();
     });
   });
 
