@@ -1,4 +1,4 @@
-import { isDonationUiRestricted } from './app.constants';
+import { isDonationUiRestricted, isElectronRenderer } from './app.constants';
 
 describe('isDonationUiRestricted', () => {
   const cases: Array<
@@ -37,5 +37,41 @@ describe('isDonationUiRestricted', () => {
     it(`${expected ? 'restricts' : 'allows'} donation UI on ${label}`, () => {
       expect(isDonationUiRestricted(context)).toBe(expected);
     });
+  });
+});
+
+const ELECTRON_USER_AGENT =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Electron/39.0.0';
+
+const electronBridge = {
+  getDistChannel: (): null => null,
+  isAppleSilicon: (): boolean => false,
+  isGnomeWayland: (): boolean => false,
+  isMacOS: (): boolean => false,
+};
+
+describe('isElectronRenderer', () => {
+  it('identifies the packaged app when the Electron bridge is available', () => {
+    expect(isElectronRenderer(ELECTRON_USER_AGENT, electronBridge)).toBeTrue();
+  });
+
+  it('does not mistake an Electron-hosted web browser for the packaged app', () => {
+    expect(isElectronRenderer(ELECTRON_USER_AGENT, undefined)).toBeFalse();
+  });
+
+  it('requires the complete platform bridge used during module startup', () => {
+    expect(
+      isElectronRenderer(ELECTRON_USER_AGENT, {
+        getDistChannel: electronBridge.getDistChannel,
+        isAppleSilicon: electronBridge.isAppleSilicon,
+        isMacOS: electronBridge.isMacOS,
+      }),
+    ).toBeFalse();
+  });
+
+  it('does not identify a normal web user agent as Electron', () => {
+    expect(
+      isElectronRenderer('Mozilla/5.0 Chrome/150.0.0.0', electronBridge),
+    ).toBeFalse();
   });
 });

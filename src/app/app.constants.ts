@@ -2,7 +2,27 @@ import { InjectionToken } from '@angular/core';
 import { IS_ANDROID_WEB_VIEW } from './util/is-android-web-view';
 import { IS_IOS_NATIVE } from './util/is-native-platform';
 
-export const IS_ELECTRON = navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
+interface ElectronRendererBridgeProbe {
+  getDistChannel?: unknown;
+  isAppleSilicon?: unknown;
+  isGnomeWayland?: unknown;
+  isMacOS?: unknown;
+}
+
+export const isElectronRenderer = (
+  userAgent: string,
+  electronApi: ElectronRendererBridgeProbe | undefined,
+): boolean =>
+  userAgent.toLowerCase().includes(' electron/') &&
+  typeof electronApi?.getDistChannel === 'function' &&
+  typeof electronApi.isAppleSilicon === 'function' &&
+  typeof electronApi.isGnomeWayland === 'function' &&
+  typeof electronApi.isMacOS === 'function';
+
+// An Electron user agent alone is insufficient: the web app can run inside an
+// Electron-hosted browser that does not expose Super Productivity's preload
+// bridge. Treating that host as the packaged app crashes during module startup.
+export const IS_ELECTRON = isElectronRenderer(navigator.userAgent, window.ea);
 
 /**
  * Injection token for IS_ELECTRON to enable testing.
