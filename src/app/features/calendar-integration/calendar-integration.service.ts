@@ -58,6 +58,7 @@ import { PluginIssueProviderRegistryService } from '../../plugins/issue-provider
 import { PluginHttpService } from '../../plugins/issue-provider/plugin-http.service';
 import { selectEnabledIssueProviders } from '../issue/store/issue-provider.selectors';
 import { PluginSearchResult } from '../../plugins/issue-provider/plugin-issue-provider.model';
+import { PluginIssueProviderSecretConfigService } from '../../plugins/issue-provider/plugin-issue-provider-secret-config.service';
 import { HiddenCalendarEventsService } from './hidden-calendar-events.service';
 import { TaskArchiveService } from '../archive/task-archive.service';
 import { passesCalendarEventRegexFilter } from './calendar-event-regex-filter';
@@ -78,6 +79,7 @@ export class CalendarIntegrationService {
   private _store = inject(Store);
   private _pluginRegistry = inject(PluginIssueProviderRegistryService);
   private _pluginHttp = inject(PluginHttpService);
+  private _pluginSecretConfig = inject(PluginIssueProviderSecretConfigService);
   private _hiddenEventsService = inject(HiddenCalendarEventsService);
   private _taskArchiveService = inject(TaskArchiveService);
   private _refreshTrigger$ = new Subject<void>();
@@ -326,12 +328,13 @@ export class CalendarIntegrationService {
       return [];
     }
 
+    const config = await this._pluginSecretConfig.resolve(provider, pluginProvider);
     const http = this._pluginHttp.createHttpHelper(
-      () => Promise.resolve(provider.definition.getHeaders(pluginProvider.pluginConfig)),
+      () => Promise.resolve(provider.definition.getHeaders(config)),
       { allowPrivateNetwork: provider.allowPrivateNetwork },
     );
     const results: PluginSearchResult[] =
-      await provider.definition.getNewIssuesForBacklog(pluginProvider.pluginConfig, http);
+      await provider.definition.getNewIssuesForBacklog(config, http);
 
     return results
       .filter((r) => r.start != null)

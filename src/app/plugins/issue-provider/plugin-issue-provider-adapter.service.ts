@@ -23,6 +23,7 @@ import { sortTagLabels } from './plugin-tag-utils';
 import { getDbDateStr } from '../../util/get-db-date-str';
 import { T } from '../../t.const';
 import { PluginLog } from '../../core/log';
+import { PluginIssueProviderSecretConfigService } from './plugin-issue-provider-secret-config.service';
 
 @Injectable({ providedIn: 'root' })
 export class PluginIssueProviderAdapterService implements IssueServiceInterface {
@@ -32,6 +33,7 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
   private _snackService = inject(SnackService);
   private _taskService = inject(TaskService);
   private _tagService = inject(TagService);
+  private _secretConfig = inject(PluginIssueProviderSecretConfigService);
 
   // Not meaningful for a multi-plugin adapter, but required by interface
   pollInterval = 0;
@@ -45,16 +47,16 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     if (!pluginCfg) {
       return false;
     }
-    const resolved = this._resolve(pluginCfg);
+    const resolved = await this._resolve(pluginCfg);
     if (!resolved) {
       return false;
     }
-    const { provider, http } = resolved;
+    const { provider, http, config } = resolved;
     if (!provider.definition.testConnection) {
       return true;
     }
     try {
-      return await provider.definition.testConnection(pluginCfg.pluginConfig, http);
+      return await provider.definition.testConnection(config, http);
     } catch (e) {
       PluginLog.err(
         `[PluginIssueAdapter] testConnection failed for ${pluginCfg.issueProviderKey}:`,
@@ -104,14 +106,14 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     if (!cfg) {
       return null;
     }
-    const resolved = this._resolve(cfg);
+    const resolved = await this._resolve(cfg);
     if (!resolved) {
       return null;
     }
     try {
       return await resolved.provider.definition.getById(
         String(id),
-        cfg.pluginConfig,
+        resolved.config,
         resolved.http,
       );
     } catch (e) {
@@ -157,14 +159,14 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     if (!cfg) {
       return [];
     }
-    const resolved = this._resolve(cfg);
+    const resolved = await this._resolve(cfg);
     if (!resolved) {
       return [];
     }
     try {
       const results = await resolved.provider.definition.searchIssues(
         searchTerm,
-        cfg.pluginConfig,
+        resolved.config,
         resolved.http,
       );
       return results.map((r) => ({
@@ -197,14 +199,14 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     if (!cfg) {
       return null;
     }
-    const resolved = this._resolve(cfg);
+    const resolved = await this._resolve(cfg);
     if (!resolved) {
       return null;
     }
     try {
       const issue = await resolved.provider.definition.getById(
         task.issueId,
-        cfg.pluginConfig,
+        resolved.config,
         resolved.http,
       );
       if (!issue) {
@@ -288,13 +290,13 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     if (!cfg) {
       return [];
     }
-    const resolved = this._resolve(cfg);
+    const resolved = await this._resolve(cfg);
     if (!resolved || !resolved.provider.definition.getNewIssuesForBacklog) {
       return [];
     }
     try {
       const results = await resolved.provider.definition.getNewIssuesForBacklog(
-        cfg.pluginConfig,
+        resolved.config,
         resolved.http,
       );
       const existingIds = new Set(allExistingIssueIds.map(String));
@@ -327,21 +329,24 @@ export class PluginIssueProviderAdapterService implements IssueServiceInterface 
     return cfg as unknown as IssueProviderPluginType;
   }
 
-  private _resolve(cfg: IssueProviderPluginType):
+  private async _resolve(cfg: IssueProviderPluginType): Promise<
     | {
         provider: RegisteredPluginIssueProvider;
         http: PluginHttp;
+        config: Record<string, unknown>;
       }
-    | undefined {
+    | undefined
+  > {
     const provider = this._registry.getProvider(cfg.issueProviderKey);
     if (!provider) {
       return undefined;
     }
+    const config = await this._secretConfig.resolve(provider, cfg);
     const http = this._pluginHttp.createHttpHelper(
-      () => provider.definition.getHeaders(cfg.pluginConfig),
+      () => provider.definition.getHeaders(config),
       { allowPrivateNetwork: provider.allowPrivateNetwork },
     );
-    return { provider, http };
+    return { provider, http, config };
   }
 
   private async _getCfg(

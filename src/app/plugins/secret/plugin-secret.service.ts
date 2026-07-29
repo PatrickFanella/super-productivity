@@ -29,6 +29,11 @@ import {
  */
 export const MAX_PLUGIN_SECRET_LENGTH = 16 * 1024;
 
+export const getIssueProviderSecretOwnerKey = (
+  pluginId: string,
+  providerId: string,
+): string => JSON.stringify([pluginId, providerId]);
+
 @Injectable({ providedIn: 'root' })
 export class PluginSecretService {
   async setSecret(pluginId: string, key: string, value: string): Promise<void> {
@@ -50,6 +55,59 @@ export class PluginSecretService {
 
   async deleteSecret(pluginId: string, key: string): Promise<void> {
     await deleteSecret(this._entityId(pluginId, key));
+  }
+
+  /**
+   * Purge the secrets belonging to one issue-provider configuration without
+   * touching another configuration registered by the same plugin.
+   */
+  async removeSecretsWithKeyPrefix(pluginId: string, keyPrefix: string): Promise<void> {
+    const entityPrefix = this._entityId(pluginId, keyPrefix);
+    const allKeys = await getAllSecretKeys();
+    const owned = allKeys.filter((entityId) => entityId.startsWith(entityPrefix));
+    for (const entityId of owned) {
+      await deleteSecret(entityId);
+    }
+    if (owned.length > 0) {
+      PluginLog.log('PluginSecretService: Removed scoped secrets on cleanup', {
+        pluginId,
+        count: owned.length,
+      });
+    }
+  }
+
+  /**
+   * Reconcile device-local issue-provider secrets after hydration, remote
+   * deletion, or a full state replacement.
+   */
+  async removeOrphanedIssueProviderSecrets(
+    activeOwnerKeys: ReadonlySet<string>,
+  ): Promise<void> {
+    const allKeys = await getAllSecretKeys();
+    const orphaned = allKeys.filter((entityId) => {
+      const keyStart = entityId.indexOf(':') + 1;
+      const key = entityId.slice(keyStart);
+      if (!key.startsWith('issue-provider:')) {
+        return false;
+      }
+      const encodedProviderId = key.slice('issue-provider:'.length).split(':')[0];
+      try {
+        const pluginId = entityId.slice(0, keyStart - 1);
+        return !activeOwnerKeys.has(
+          getIssueProviderSecretOwnerKey(pluginId, decodeURIComponent(encodedProviderId)),
+        );
+      } catch {
+        return true;
+      }
+    });
+    for (const entityId of orphaned) {
+      await deleteSecret(entityId);
+    }
+    if (orphaned.length > 0) {
+      PluginLog.log('PluginSecretService: Removed orphaned provider secrets', {
+        count: orphaned.length,
+      });
+    }
   }
 
   /**

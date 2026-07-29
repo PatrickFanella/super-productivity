@@ -567,23 +567,28 @@ Rules of thumb:
 
 #### Secrets in issue-provider plugins
 
-Issue-provider plugins get the same secret API (an issue provider is a normal
-plugin that also calls `registerIssueProvider`). Your definition callbacks
-(`getHeaders`, `getById`, `searchIssues`, …) run in your plugin's context, so
-they can read secrets directly:
+Issue-provider plugins can declare a string configuration field as
+`localOnly`. The host stores that value in a separate namespace for each
+issue-provider configuration and supplies it to asynchronous provider
+callbacks without placing it in synchronized configuration:
 
 ```javascript
 PluginAPI.registerIssueProvider({
-  // Declare only NON-secret fields here — their values are stored in the
-  // synced issue-provider config:
   configFields: [
-    { key: 'host', type: 'text', label: 'Host' },
-    { key: 'username', type: 'text', label: 'Username' },
+    { key: 'host', type: 'input', label: 'Host' },
+    { key: 'username', type: 'input', label: 'Username' },
+    {
+      key: 'apiToken',
+      type: 'password',
+      label: 'API token',
+      required: true,
+      localOnly: true,
+      // Refuse to reuse the token if this account identity changes.
+      localOnlyScope: ['host', 'username'],
+    },
   ],
-  // getHeaders may return a Promise, so read the credential from secret
-  // storage instead of from `config`:
-  async getHeaders(config) {
-    const token = await PluginAPI.getSecret('apiToken');
+  getHeaders(config) {
+    const token = config.apiToken;
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
   async getById(issueId, config, http) {
@@ -593,11 +598,21 @@ PluginAPI.registerIssueProvider({
 });
 ```
 
-The host passes only the synced `config` into these callbacks — there is no
-secret parameter, and the declarative `configFields` form always writes to the
-synced config. So collect the secret through your own UI (a config dialog
-registered via `registerConfigHandler`, or a side panel) and store it with
-`setSecret` there; do **not** add the credential as a `configFields` entry.
+Local-only values are available to asynchronous operational callbacks and
+`getHeaders`. They are deliberately absent from synchronous callbacks such as
+`getIssueLink` and `getSyncConfig`; those callbacks must depend only on
+synchronized, non-sensitive settings. Existing raw values remain a
+compatibility fallback until the user explicitly saves the provider in a host
+version that supports `localOnly`.
+
+Declare `localOnlyScope` for credentials tied to an endpoint or account. The
+host binds the local value to those non-secret configuration keys and requires
+the credential to be entered again if any scoped value changes. This prevents a
+password saved for one host or account from being sent to another after a local
+edit, remote sync update, or restore.
+
+For secrets that are not part of the standard issue-provider configuration
+form, use `setSecret` and `getSecret` directly from custom plugin UI.
 
 ## Best Practices
 

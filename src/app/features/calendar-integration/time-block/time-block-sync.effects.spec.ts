@@ -14,6 +14,7 @@ import { selectEnabledIssueProviders } from '../../issue/store/issue-provider.se
 import { DEFAULT_TASK, Task, TaskWithDueTime } from '../../tasks/task.model';
 import { selectAllTasksWithDueTimeSorted } from '../../tasks/store/task.selectors';
 import { IssueProviderActions } from '../../issue/store/issue-provider.actions';
+import { PluginIssueProviderSecretConfigService } from '../../../plugins/issue-provider/plugin-issue-provider-secret-config.service';
 
 interface TestProvider {
   id: string;
@@ -31,6 +32,8 @@ describe('TimeBlockSyncEffects', () => {
   let store: MockStore;
   let provider: TestProvider;
   let bulkDeleteSidecarIds: string[];
+  let localOnlyFieldsEnabled: boolean;
+  let secretConfigSpy: jasmine.SpyObj<PluginIssueProviderSecretConfigService>;
 
   const createTask = (id: string, partial: Partial<Task> = {}): Task => ({
     ...DEFAULT_TASK,
@@ -57,6 +60,15 @@ describe('TimeBlockSyncEffects', () => {
       pluginConfig: { isAutoTimeBlock: true },
     };
     bulkDeleteSidecarIds = [];
+    localOnlyFieldsEnabled = false;
+    secretConfigSpy = jasmine.createSpyObj<PluginIssueProviderSecretConfigService>(
+      'PluginIssueProviderSecretConfigService',
+      ['resolve'],
+    );
+    secretConfigSpy.resolve.and.callFake(async (_registered, cfg) => ({
+      ...cfg.pluginConfig,
+      password: 'device-password',
+    }));
 
     TestBed.configureTestingModule({
       providers: [
@@ -74,6 +86,16 @@ describe('TimeBlockSyncEffects', () => {
           useValue: {
             getProvider: () => ({
               definition: {
+                configFields: localOnlyFieldsEnabled
+                  ? [
+                      {
+                        key: 'password',
+                        type: 'password',
+                        label: 'Password',
+                        localOnly: true,
+                      },
+                    ]
+                  : [],
                 getHeaders: () => ({}),
                 timeBlock: {
                   upsertEvent: upsertEventSpy,
@@ -87,6 +109,10 @@ describe('TimeBlockSyncEffects', () => {
         {
           provide: PluginHttpService,
           useValue: { createHttpHelper: () => ({}) },
+        },
+        {
+          provide: PluginIssueProviderSecretConfigService,
+          useValue: secretConfigSpy,
         },
         {
           provide: SnackService,
@@ -133,6 +159,27 @@ describe('TimeBlockSyncEffects', () => {
 
     expect(upsertEventSpy).toHaveBeenCalledTimes(1);
     expect(upsertEventSpy.calls.mostRecent().args[0]).toBe('task-1');
+    flush();
+  }));
+
+  it('hydrates local-only credentials for time-block callbacks', fakeAsync(() => {
+    localOnlyFieldsEnabled = true;
+    const task = createTask('task-1');
+
+    actions$.next(
+      TaskSharedActions.scheduleTaskWithTime({
+        task,
+        dueWithTime: task.dueWithTime!,
+        isMoveToBacklog: false,
+      }),
+    );
+    tick(COALESCE_MS);
+    flushMicrotasks();
+
+    expect(secretConfigSpy.resolve).toHaveBeenCalled();
+    expect(upsertEventSpy.calls.mostRecent().args[2]).toEqual(
+      jasmine.objectContaining({ password: 'device-password' }),
+    );
     flush();
   }));
 

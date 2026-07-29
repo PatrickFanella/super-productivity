@@ -19,6 +19,7 @@ import { TaskService } from '../../features/tasks/task.service';
 import { SnackService } from '../../core/snack/snack.service';
 import { T } from '../../t.const';
 import { TagService } from '../../features/tag/tag.service';
+import { PluginIssueProviderSecretConfigService } from './plugin-issue-provider-secret-config.service';
 
 describe('PluginIssueProviderAdapterService', () => {
   let service: PluginIssueProviderAdapterService;
@@ -28,6 +29,7 @@ describe('PluginIssueProviderAdapterService', () => {
   let snackSpy: jasmine.SpyObj<SnackService>;
   let taskServiceSpy: jasmine.SpyObj<TaskService>;
   let tagServiceSpy: jasmine.SpyObj<TagService>;
+  let secretConfigSpy: jasmine.SpyObj<PluginIssueProviderSecretConfigService>;
 
   const PLUGIN_KEY = 'plugin:test-plugin';
   const PROVIDER_ID = 'provider-123';
@@ -99,6 +101,11 @@ describe('PluginIssueProviderAdapterService', () => {
       'tagsNoMyDayAndNoList',
       'addTag',
     ]);
+    secretConfigSpy = jasmine.createSpyObj<PluginIssueProviderSecretConfigService>(
+      'PluginIssueProviderSecretConfigService',
+      ['resolve'],
+    );
+    secretConfigSpy.resolve.and.callFake(async (_provider, cfg) => cfg.pluginConfig);
     pluginHttpSpy.createHttpHelper.and.returnValue(mockHttpHelper);
     storeSpy.select.and.returnValue(of(mockPluginCfg));
     storeSpy.pipe.and.returnValue(of([]));
@@ -115,6 +122,10 @@ describe('PluginIssueProviderAdapterService', () => {
         { provide: SnackService, useValue: snackSpy },
         { provide: TaskService, useValue: taskServiceSpy },
         { provide: TagService, useValue: tagServiceSpy },
+        {
+          provide: PluginIssueProviderSecretConfigService,
+          useValue: secretConfigSpy,
+        },
       ],
     });
 
@@ -145,6 +156,30 @@ describe('PluginIssueProviderAdapterService', () => {
 
       expect(result).toBe(true);
       expect(testConnectionSpy).toHaveBeenCalledWith(mockPluginConfig, mockHttpHelper);
+    });
+
+    it('passes one resolved runtime config to the callback and headers', async () => {
+      const runtimeConfig = {
+        ...mockPluginConfig,
+        password: 'device-password',
+      };
+      const getHeadersSpy = jasmine.createSpy('getHeaders').and.returnValue({});
+      const testConnectionSpy = jasmine.createSpy('testConnection').and.resolveTo(true);
+      const provider = createMockProvider({
+        getHeaders: getHeadersSpy,
+        testConnection: testConnectionSpy,
+      });
+      registrySpy.getProvider.and.returnValue(provider);
+      secretConfigSpy.resolve.and.resolveTo(runtimeConfig);
+
+      await service.testConnection(
+        mockPluginCfg as unknown as Parameters<typeof service.testConnection>[0],
+      );
+      const getHeaders = pluginHttpSpy.createHttpHelper.calls.mostRecent().args[0];
+      await getHeaders();
+
+      expect(testConnectionSpy).toHaveBeenCalledWith(runtimeConfig, mockHttpHelper);
+      expect(getHeadersSpy).toHaveBeenCalledWith(runtimeConfig);
     });
 
     it('should return true when plugin definition has no testConnection', async () => {

@@ -80,6 +80,9 @@ export const createPluginSyncAdapter = (
     getHeaders: () => Record<string, string> | Promise<Record<string, string>>,
   ) => PluginHttp,
   tagService: TagService,
+  resolveConfig: (
+    cfg: IssueProviderPluginType,
+  ) => Promise<Record<string, unknown>> = async (cfg) => cfg.pluginConfig,
 ): IssueSyncAdapter<IssueProviderPluginType> => {
   const isPushSupported = !!definition.updateIssue;
   const fieldMappings: FieldMapping[] = (definition.fieldMappings ?? []).map((pm) =>
@@ -90,8 +93,8 @@ export const createPluginSyncAdapter = (
     fieldMappings.filter((m) => m.taskField === 'tagIds').map((m) => m.issueField),
   );
 
-  const createHttp = (cfg: IssueProviderPluginType): PluginHttp =>
-    createHttpHelper(() => definition.getHeaders(cfg.pluginConfig));
+  const createHttp = (config: Record<string, unknown>): PluginHttp =>
+    createHttpHelper(() => definition.getHeaders(config));
 
   return {
     getFieldMappings: (): FieldMapping[] => fieldMappings,
@@ -121,8 +124,9 @@ export const createPluginSyncAdapter = (
       issueId: string,
       cfg: IssueProviderPluginType,
     ): Promise<Record<string, unknown>> => {
-      const http = createHttp(cfg);
-      const issue = await definition.getById(issueId, cfg.pluginConfig, http);
+      const config = await resolveConfig(cfg);
+      const http = createHttp(config);
+      const issue = await definition.getById(issueId, config, http);
       return issue as Record<string, unknown>;
     },
 
@@ -134,8 +138,9 @@ export const createPluginSyncAdapter = (
       if (!definition.updateIssue) {
         throw new Error('Plugin does not implement updateIssue');
       }
-      const http = createHttp(cfg);
-      await definition.updateIssue(issueId, changes, cfg.pluginConfig, http);
+      const config = await resolveConfig(cfg);
+      const http = createHttp(config);
+      await definition.updateIssue(issueId, changes, config, http);
     },
 
     extractSyncValues: (issue: Record<string, unknown>): Record<string, unknown> => {
@@ -175,8 +180,9 @@ export const createPluginSyncAdapter = (
       if (!definition.createIssue) {
         throw new Error('Plugin does not implement createIssue');
       }
-      const http = createHttp(cfg);
-      const result = await definition.createIssue(title, cfg.pluginConfig, http);
+      const config = await resolveConfig(cfg);
+      const http = createHttp(config);
+      const result = await definition.createIssue(title, config, http);
       return {
         issueId: result.issueId,
         issueNumber: result.issueNumber,
@@ -191,8 +197,9 @@ export const createPluginSyncAdapter = (
 
     deleteIssue: definition.deleteIssue
       ? async (issueId: string, cfg: IssueProviderPluginType): Promise<void> => {
-          const http = createHttp(cfg);
-          await definition.deleteIssue!(issueId, cfg.pluginConfig, http);
+          const config = await resolveConfig(cfg);
+          const http = createHttp(config);
+          await definition.deleteIssue!(issueId, config, http);
         }
       : undefined,
   };

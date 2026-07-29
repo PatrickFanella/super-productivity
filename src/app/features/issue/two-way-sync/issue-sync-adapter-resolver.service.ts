@@ -5,6 +5,8 @@ import { TagService } from '../../tag/tag.service';
 import { createPluginSyncAdapter } from '../../../plugins/issue-provider/plugin-sync-adapter.service';
 import { IssueSyncAdapter } from './issue-sync-adapter.interface';
 import { IssueSyncAdapterRegistryService } from './issue-sync-adapter-registry.service';
+import { PluginIssueProviderSecretConfigService } from '../../../plugins/issue-provider/plugin-issue-provider-secret-config.service';
+import { IssueProviderPluginType } from '../issue.model';
 
 @Injectable({
   providedIn: 'root',
@@ -14,6 +16,7 @@ export class IssueSyncAdapterResolverService {
   private readonly _pluginRegistry = inject(PluginIssueProviderRegistryService);
   private readonly _pluginHttp = inject(PluginHttpService);
   private readonly _tagService = inject(TagService);
+  private readonly _secretConfig = inject(PluginIssueProviderSecretConfigService);
 
   getAdapter(issueType: string): IssueSyncAdapter<unknown> | undefined {
     const existing = this._adapterRegistry.get(issueType);
@@ -40,6 +43,7 @@ export class IssueSyncAdapterResolverService {
           allowPrivateNetwork: provider.allowPrivateNetwork,
         }),
       this._tagService,
+      (cfg: IssueProviderPluginType) => this._secretConfig.resolve(provider, cfg),
     );
 
     this._adapterRegistry.register(issueType, adapter);

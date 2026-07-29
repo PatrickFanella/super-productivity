@@ -31,6 +31,7 @@ import { IssueProviderPluginDefinition } from '../../../plugins/issue-provider/p
 import { selectAllTasksWithDueTimeSorted } from '../../tasks/store/task.selectors';
 import { T } from '../../../t.const';
 import { Log } from '../../../core/log';
+import { PluginIssueProviderSecretConfigService } from '../../../plugins/issue-provider/plugin-issue-provider-secret-config.service';
 
 interface TimeBlockContext {
   providerId: string;
@@ -80,6 +81,7 @@ export class TimeBlockSyncEffects {
   private readonly _taskService = inject(TaskService);
   private readonly _pluginRegistry = inject(PluginIssueProviderRegistryService);
   private readonly _pluginHttpService = inject(PluginHttpService);
+  private readonly _pluginSecretConfig = inject(PluginIssueProviderSecretConfigService);
   private readonly _snackService = inject(SnackService);
   private readonly _deletesSidecar = inject(TimeBlockDeleteSidecarService);
   private readonly _backfilledProviderIds = new Set<string>();
@@ -416,16 +418,23 @@ export class TimeBlockSyncEffects {
         const registered = this._pluginRegistry.getProvider(provider.issueProviderKey);
         if (!registered?.definition.timeBlock) return EMPTY;
 
-        const http = this._pluginHttpService.createHttpHelper(
-          () => registered.definition.getHeaders(provider.pluginConfig),
-          { allowPrivateNetwork: registered.allowPrivateNetwork },
-        );
-        return fn({
-          providerId: provider.id,
-          definition: registered.definition,
-          config: { ...provider.pluginConfig },
-          http,
-        });
+        const runWithConfig = (config: Record<string, unknown>): Observable<T> => {
+          const http = this._pluginHttpService.createHttpHelper(
+            () => registered.definition.getHeaders(config),
+            { allowPrivateNetwork: registered.allowPrivateNetwork },
+          );
+          return fn({
+            providerId: provider.id,
+            definition: registered.definition,
+            config,
+            http,
+          });
+        };
+        return registered.definition.configFields?.some((field) => field.localOnly)
+          ? from(this._pluginSecretConfig.resolve(registered, provider)).pipe(
+              concatMap(runWithConfig),
+            )
+          : runWithConfig({ ...provider.pluginConfig });
       }),
     );
   }

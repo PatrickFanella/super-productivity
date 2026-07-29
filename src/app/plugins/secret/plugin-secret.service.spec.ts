@@ -1,5 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { MAX_PLUGIN_SECRET_LENGTH, PluginSecretService } from './plugin-secret.service';
+import {
+  getIssueProviderSecretOwnerKey,
+  MAX_PLUGIN_SECRET_LENGTH,
+  PluginSecretService,
+} from './plugin-secret.service';
 import { deleteSecret, getAllSecretKeys } from './plugin-secret-store';
 
 /**
@@ -62,6 +66,54 @@ describe('PluginSecretService', () => {
     await service.removeSecretsForPlugin('plugin-a');
     expect(await service.getSecret('plugin-a', 'k')).toBeNull();
     expect(await service.getSecret('plugin-ab', 'k')).toBe('ab');
+  });
+
+  it('removeSecretsWithKeyPrefix purges one issue-provider namespace only', async () => {
+    await service.setSecret('plugin-a', 'issue-provider:work:password', 'work');
+    await service.setSecret('plugin-a', 'issue-provider:personal:password', 'personal');
+
+    await service.removeSecretsWithKeyPrefix('plugin-a', 'issue-provider:work:');
+
+    expect(
+      await service.getSecret('plugin-a', 'issue-provider:work:password'),
+    ).toBeNull();
+    expect(await service.getSecret('plugin-a', 'issue-provider:personal:password')).toBe(
+      'personal',
+    );
+  });
+
+  it('removes orphaned provider secrets after state replacement', async () => {
+    await service.setSecret('plugin-a', 'issue-provider:active:password', 'keep');
+    await service.setSecret('plugin-a', 'issue-provider:removed:password', 'remove');
+    await service.setSecret('plugin-a', 'unrelated-secret', 'keep-too');
+
+    await service.removeOrphanedIssueProviderSecrets(
+      new Set([getIssueProviderSecretOwnerKey('plugin-a', 'active')]),
+    );
+
+    expect(await service.getSecret('plugin-a', 'issue-provider:active:password')).toBe(
+      'keep',
+    );
+    expect(
+      await service.getSecret('plugin-a', 'issue-provider:removed:password'),
+    ).toBeNull();
+    expect(await service.getSecret('plugin-a', 'unrelated-secret')).toBe('keep-too');
+  });
+
+  it('does not confuse matching provider ids owned by different plugins', async () => {
+    await service.setSecret('plugin-a', 'issue-provider:shared:password', 'remove');
+    await service.setSecret('plugin-b', 'issue-provider:shared:password', 'keep');
+
+    await service.removeOrphanedIssueProviderSecrets(
+      new Set([getIssueProviderSecretOwnerKey('plugin-b', 'shared')]),
+    );
+
+    expect(
+      await service.getSecret('plugin-a', 'issue-provider:shared:password'),
+    ).toBeNull();
+    expect(await service.getSecret('plugin-b', 'issue-provider:shared:password')).toBe(
+      'keep',
+    );
   });
 
   it('rejects an empty key', async () => {

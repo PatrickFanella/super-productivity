@@ -108,6 +108,22 @@ export interface PluginFormField {
   required?: boolean;
   /** Help text shown below the field */
   description?: string;
+  /**
+   * Keep this field in the host's device-local secret store instead of the
+   * synchronized issue-provider configuration.
+   *
+   * Local-only values are available to asynchronous provider callbacks and
+   * header resolution. They are intentionally unavailable to synchronous
+   * callbacks such as `getIssueLink`.
+   */
+  localOnly?: boolean;
+  /**
+   * Non-secret config keys that identify the endpoint/account this local-only
+   * value belongs to. The host refuses to hydrate the secret if any scoped
+   * value changes, preventing credentials from being sent to a new endpoint.
+   * Scoped values should be primitive strings or numbers.
+   */
+  localOnlyScope?: string[];
   options?: { label: string; value: string }[];
   /** For type 'link': the URL to open */
   url?: string;

@@ -120,6 +120,8 @@ import {
 import { getDbDateStr } from '../util/get-db-date-str';
 import { DataInitService } from '../core/data-init/data-init.service';
 import { PluginNodeExecutionElectronApi } from '../../../electron/shared-with-frontend/plugin-node-execution.model';
+import { PluginIssueProviderSecretConfigService } from './issue-provider/plugin-issue-provider-secret-config.service';
+import { PluginIssueProviderSecretCleanupService } from './issue-provider/plugin-issue-provider-secret-cleanup.service';
 
 type PluginDateFormat = 'short' | 'medium' | 'long' | 'time' | 'datetime';
 
@@ -158,6 +160,12 @@ export class PluginBridgeService implements OnDestroy {
   private _pluginHttpService = inject(PluginHttpService);
   private _pluginOAuthBridge = inject(PluginOAuthBridgeService);
   private _pluginSecretService = inject(PluginSecretService);
+  private _pluginIssueProviderSecretConfig = inject(
+    PluginIssueProviderSecretConfigService,
+  );
+  private _pluginIssueProviderSecretCleanup = inject(
+    PluginIssueProviderSecretCleanupService,
+  );
   private _dataInitService = inject(DataInitService);
   private _globalConfigService = inject(GlobalConfigService);
   readonly #nodeExecutionGrantTokens = new Map<string, string>();
@@ -219,6 +227,7 @@ export class PluginBridgeService implements OnDestroy {
   private readonly _configHandlers = new Map<string, () => void>();
 
   constructor() {
+    void this._pluginIssueProviderSecretCleanup;
     // Initialize window focus tracking
     this._initWindowFocusTracking();
   }
@@ -477,11 +486,16 @@ export class PluginBridgeService implements OnDestroy {
       (definition.fieldMappings?.length && definition.updateIssue)
     ) {
       const registered = this._pluginIssueProviderRegistry.getProvider(registeredKey);
+      if (!registered) {
+        PluginLog.warn(`Plugin ${pluginId} provider registration was not found`);
+        return;
+      }
       const httpOpts = { allowPrivateNetwork: registered?.allowPrivateNetwork };
       const adapter = createPluginSyncAdapter(
         definition,
         (getHeaders) => this._pluginHttpService.createHttpHelper(getHeaders, httpOpts),
         this._tagService,
+        (cfg) => this._pluginIssueProviderSecretConfig.resolve(registered, cfg),
       );
       this._syncAdapterRegistry.register(registeredKey, adapter);
       PluginLog.log(

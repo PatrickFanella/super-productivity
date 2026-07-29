@@ -26,6 +26,7 @@ import { initialTaskState } from '../../features/tasks/store/task.reducer';
 import { OperationCaptureService } from '../capture/operation-capture.service';
 import { OpType } from '../core/operation.types';
 import { PersistentAction } from '../core/persistent-action.interface';
+import { PluginSecretService } from '../../plugins/secret/plugin-secret.service';
 
 describe('StateSnapshotService', () => {
   let service: StateSnapshotService;
@@ -176,6 +177,45 @@ describe('StateSnapshotService', () => {
 
       expect((snapshot.task as any).ids).toEqual(['task1']);
       expect((snapshot.task as any).entities).toBeDefined();
+    });
+
+    it('does not include a real device-local issue-provider password', async () => {
+      const pluginSecretService = TestBed.inject(PluginSecretService);
+      const secretKey = 'issue-provider:caldav-work:password';
+      await pluginSecretService.setSecret(
+        'caldav-calendar-provider',
+        secretKey,
+        'device-password',
+      );
+      store.overrideSelector(selectIssueProviderState, {
+        ids: ['caldav-work'],
+        entities: {
+          ['caldav-work']: {
+            id: 'caldav-work',
+            isEnabled: true,
+            pluginId: 'caldav-calendar-provider',
+            issueProviderKey: 'plugin:caldav-calendar-provider',
+            pluginConfig: {
+              serverUrl: 'https://calendar.example.com',
+              username: 'me',
+            },
+          },
+        },
+      });
+
+      try {
+        const snapshot = service.getStateSnapshot();
+        const serialized = JSON.stringify(snapshot);
+
+        expect(
+          await pluginSecretService.getSecret('caldav-calendar-provider', secretKey),
+        ).toBe('device-password');
+        expect(serialized).toContain('https://calendar.example.com');
+        expect(serialized).not.toContain('device-password');
+        expect(serialized).not.toContain('"password"');
+      } finally {
+        await pluginSecretService.deleteSecret('caldav-calendar-provider', secretKey);
+      }
     });
 
     it('should exclude pending task time from an operation-log snapshot', () => {

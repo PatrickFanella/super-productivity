@@ -20,6 +20,7 @@ import {
   IssueIntegrationCfg,
   IssueProvider,
   IssueProviderKey,
+  IssueProviderPluginType,
   IssueProviderTypeMap,
   BuiltInIssueProviderKey,
 } from '../issue.model';
@@ -73,6 +74,8 @@ import { TagService } from '../../tag/tag.service';
 import { ChipListInputComponent } from '../../../ui/chip-list-input/chip-list-input.component';
 import { unique } from '../../../util/unique';
 import { mergeIssueProviderModelUpdates } from './issue-provider-model-merge.util';
+import { PluginIssueProviderSecretConfigService } from '../../../plugins/issue-provider/plugin-issue-provider-secret-config.service';
+import { RegisteredPluginIssueProvider } from '../../../plugins/issue-provider/plugin-issue-provider.model';
 
 type OptionsLoadState = 'idle' | 'loading' | 'loaded' | 'empty' | 'failed';
 
@@ -123,6 +126,8 @@ export class DialogEditIssueProviderComponent {
   private _pluginBridge = inject(PluginBridgeService);
   private _pluginHttp = inject(PluginHttpService);
   private _cdr = inject(ChangeDetectorRef);
+  private _pluginSecretConfig = inject(PluginIssueProviderSecretConfigService);
+  private _storedLocalSecretFieldKeys = new Set<string>();
 
   issueProviderKey: IssueProviderKey = (this.d.issueProvider?.issueProviderKey ||
     this.d.issueProviderKey) as IssueProviderKey;
@@ -207,35 +212,106 @@ export class DialogEditIssueProviderComponent {
   }
 
   constructor() {
-    this._initOAuthAndOptions().catch((err) => {
+    this._initLocalSecretsAndOptions().catch((err) => {
       IssueLog.err(
-        '[DialogEditIssueProvider] OAuth init failed',
+        '[DialogEditIssueProvider] local secret and OAuth init failed',
         getSafeErrorLogMeta(err),
       );
     });
   }
 
-  submit(isSkipClose = false): void {
-    if (this.form.valid) {
-      if (this.isEdit) {
-        this._store.dispatch(
-          IssueProviderActions.updateIssueProvider({
-            issueProvider: {
-              id: this.issueProvider!.id,
-              changes: this.model as IssueProvider,
-            },
-          }),
+  async submit(isSkipClose = false): Promise<void> {
+    if (!this.form.valid) {
+      return;
+    }
+
+    const provider = this._pluginRegistry.getProvider(this.issueProviderKey);
+    let modelToPersist = this.model as IssueProvider;
+    try {
+      if (provider) {
+        const pluginCfg = this.model as IssueProviderPluginType;
+        if (
+          !(await this._pluginSecretConfig.hasRequiredLocalOnlyValues(
+            provider,
+            pluginCfg,
+            this._getPersistedPluginCfg(),
+          ))
+        ) {
+          this._snackService.open({
+            type: 'ERROR',
+            msg: T.F.ISSUE.DIALOG.LOCAL_SECRET_REQUIRED,
+          });
+          return;
+        }
+        if (
+          this.isEdit &&
+          this.issueProvider &&
+          this._pluginSecretConfig.hasLegacyLocalOnlyValue(
+            provider,
+            (this.issueProvider as IssueProviderPluginType).pluginConfig,
+          )
+        ) {
+          const isConfirmed = await firstValueFrom(
+            this._matDialog
+              .open(DialogConfirmComponent, {
+                restoreFocus: true,
+                data: {
+                  cancelTxt: T.G.CANCEL,
+                  okTxt: T.G.CONTINUE,
+                  message: T.F.ISSUE.DIALOG.LOCAL_SECRET_MIGRATION_WARNING,
+                },
+              })
+              .afterClosed(),
+          );
+          if (!isConfirmed) {
+            return;
+          }
+        }
+        modelToPersist = await this._pluginSecretConfig.persistAndSanitize(
+          provider,
+          pluginCfg,
+          this._getPersistedPluginCfg(),
         );
-      } else {
-        this._store.dispatch(
-          IssueProviderActions.addIssueProvider({
-            issueProvider: this.model as IssueProvider,
-          }),
+        await this._refreshStoredLocalSecretFields(
+          provider,
+          modelToPersist as IssueProviderPluginType,
         );
       }
-      if (!isSkipClose) {
-        this._matDialogRef.close(this.model);
-      }
+    } catch (error) {
+      IssueLog.err(
+        '[DialogEditIssueProvider] local credential save failed',
+        getSafeErrorLogMeta(error),
+      );
+      this._snackService.open({
+        type: 'ERROR',
+        msg: T.F.ISSUE.DIALOG.LOCAL_SECRET_SAVE_FAILED,
+      });
+      return;
+    }
+
+    this.model = modelToPersist;
+    if (this.isEdit) {
+      this._store.dispatch(
+        IssueProviderActions.updateIssueProvider({
+          issueProvider: {
+            id: this.issueProvider!.id,
+            changes: modelToPersist,
+          },
+        }),
+      );
+    } else {
+      this._store.dispatch(
+        IssueProviderActions.addIssueProvider({
+          issueProvider: modelToPersist,
+        }),
+      );
+    }
+    if (!isSkipClose) {
+      this._matDialogRef.close(modelToPersist);
+    } else if (provider) {
+      this.configFormSection = this._getPluginFormSection();
+      this.fields = this.configFormSection?.items ?? [];
+      this._cdr.detectChanges();
     }
   }
 
@@ -245,6 +321,14 @@ export class DialogEditIssueProviderComponent {
 
   duplicate(): void {
     const providerData = structuredClone(this.model) as IssueProvider;
+    const provider = this._pluginRegistry.getProvider(this.issueProviderKey);
+    if (provider) {
+      (providerData as IssueProviderPluginType).pluginConfig =
+        this._pluginSecretConfig.stripLocalOnlyValues(
+          provider,
+          (providerData as IssueProviderPluginType).pluginConfig,
+        );
+    }
     this._matDialogRef.close();
     this._matDialog.open(DialogEditIssueProviderComponent, {
       restoreFocus: true,
@@ -285,9 +369,18 @@ export class DialogEditIssueProviderComponent {
 
   async testConnection(): Promise<void> {
     try {
-      const isSuccess = await this._issueService.testConnection(
-        this.model as IssueProvider,
-      );
+      const provider = this._pluginRegistry.getProvider(this.issueProviderKey);
+      const modelForTest = provider
+        ? ({
+            ...this.model,
+            pluginConfig: await this._pluginSecretConfig.resolve(
+              provider,
+              this.model as IssueProviderPluginType,
+              this._getPersistedPluginCfg(),
+            ),
+          } as IssueProviderPluginType)
+        : (this.model as IssueProvider);
+      const isSuccess = await this._issueService.testConnection(modelForTest);
       this.isConnectionWorks.set(isSuccess);
       if (isSuccess) {
         this._snackService.open({
@@ -332,12 +425,28 @@ export class DialogEditIssueProviderComponent {
             .filter((task) => task.issueProviderId === providerId)
             .map((task) => task.id);
 
-          this._store.dispatch(
-            TaskSharedActions.deleteIssueProvider({
-              issueProviderId: providerId,
-              taskIdsToUnlink,
-            }),
-          );
+          const provider = this._pluginRegistry.getProvider(this.issueProviderKey);
+          try {
+            if (provider) {
+              await this._pluginSecretConfig.removeProviderSecrets(provider, providerId);
+            }
+            this._store.dispatch(
+              TaskSharedActions.deleteIssueProvider({
+                issueProviderId: providerId,
+                taskIdsToUnlink,
+              }),
+            );
+          } catch (error) {
+            IssueLog.err(
+              '[DialogEditIssueProvider] local credential cleanup failed',
+              getSafeErrorLogMeta(error),
+            );
+            this._snackService.open({
+              type: 'ERROR',
+              msg: T.F.ISSUE.DIALOG.LOCAL_SECRET_SAVE_FAILED,
+            });
+            return;
+          }
           this._matDialogRef.close();
         }
       });
@@ -349,7 +458,7 @@ export class DialogEditIssueProviderComponent {
       ...this.model,
       isEnabled,
     };
-    this.submit(true);
+    void this.submit(true);
     this.isConnectionWorks.set(false);
   }
 
@@ -428,7 +537,11 @@ export class DialogEditIssueProviderComponent {
       return { isSuccess: true, hasOptions: true };
     }
 
-    const pluginConfig = (this.model as Record<string, unknown>)['pluginConfig'] ?? {};
+    const pluginConfig = await this._pluginSecretConfig.resolve(
+      provider,
+      this.model as IssueProviderPluginType,
+      this._getPersistedPluginCfg(),
+    );
     const http = this._pluginHttp.createHttpHelper(
       () => provider.definition.getHeaders(pluginConfig as Record<string, unknown>),
       { allowPrivateNetwork: provider.allowPrivateNetwork },
@@ -599,6 +712,12 @@ export class DialogEditIssueProviderComponent {
     return { twoWaySync };
   }
 
+  private _getPersistedPluginCfg(): IssueProviderPluginType | undefined {
+    return this.isEdit && this.issueProvider
+      ? (this.issueProvider as IssueProviderPluginType)
+      : undefined;
+  }
+
   private _normalizeSyncDirectionForCapabilities(
     direction: PluginSyncDirection,
     isPushSupported: boolean,
@@ -670,6 +789,7 @@ export class DialogEditIssueProviderComponent {
     options?: { value: string; label: string }[];
     showIf?: string;
     loadOptions?: unknown;
+    localOnly?: boolean;
   }): unknown {
     if (f.type === 'link') {
       return {
@@ -696,8 +816,14 @@ export class DialogEditIssueProviderComponent {
         : {}),
       templateOptions: {
         label: f.label,
-        required: f.required ?? false,
-        ...(f.description ? { description: f.description } : {}),
+        required:
+          (f.required ?? false) &&
+          !(f.localOnly && this._storedLocalSecretFieldKeys.has(f.key)),
+        ...(f.localOnly && this._storedLocalSecretFieldKeys.has(f.key)
+          ? { description: T.F.ISSUE.DIALOG.LOCAL_SECRET_STORED }
+          : f.description
+            ? { description: f.description }
+            : {}),
         ...(f.type === 'password' ? { type: 'password' } : {}),
         ...(f.type === 'select' || f.type === 'multiSelect'
           ? {
@@ -828,6 +954,37 @@ export class DialogEditIssueProviderComponent {
         if (this.isEdit) {
           await this.loadDynamicOptions();
         }
+      }
+    }
+  }
+
+  private async _initLocalSecretsAndOptions(): Promise<void> {
+    const provider = this._pluginRegistry.getProvider(this.issueProviderKey);
+    if (provider && this.model.id) {
+      await this._refreshStoredLocalSecretFields(
+        provider,
+        this.model as IssueProviderPluginType,
+      );
+      if (this._storedLocalSecretFieldKeys.size > 0) {
+        this.configFormSection = this._getPluginFormSection();
+        this.fields = this.configFormSection?.items ?? [];
+        this._cdr.detectChanges();
+      }
+    }
+    await this._initOAuthAndOptions();
+  }
+
+  private async _refreshStoredLocalSecretFields(
+    provider: RegisteredPluginIssueProvider,
+    cfg: IssueProviderPluginType,
+  ): Promise<void> {
+    this._storedLocalSecretFieldKeys.clear();
+    const localFields = provider.definition.configFields.filter(
+      (field) => field.localOnly,
+    );
+    for (const field of localFields) {
+      if (await this._pluginSecretConfig.hasStoredSecret(provider, cfg, field.key)) {
+        this._storedLocalSecretFieldKeys.add(field.key);
       }
     }
   }

@@ -1260,6 +1260,8 @@ PluginAPI.registerIssueProvider({
       type: 'password' as const,
       label: 'Password',
       required: true,
+      localOnly: true,
+      localOnlyScope: ['serverUrl', 'username'],
     },
     {
       key: 'readCalendarIds',

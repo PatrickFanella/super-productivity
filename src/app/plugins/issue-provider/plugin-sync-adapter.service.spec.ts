@@ -183,6 +183,34 @@ describe('createPluginSyncAdapter', () => {
     expect(result['id']).toBe('1');
   });
 
+  it('uses the same resolved runtime config for callbacks and headers', async () => {
+    const getHeadersSpy = jasmine.createSpy('getHeaders').and.returnValue({});
+    const definition = createMockDefinition({ getHeaders: getHeadersSpy });
+    const createHttpHelper = jasmine
+      .createSpy('createHttpHelper')
+      .and.callFake(
+        (getHeaders: () => Record<string, string> | Promise<Record<string, string>>) => {
+          void getHeaders();
+          return mockHttpHelper;
+        },
+      );
+    const resolvedConfig = {
+      ...MOCK_CFG.pluginConfig,
+      password: 'device-password',
+    };
+    const adapter = createPluginSyncAdapter(
+      definition,
+      createHttpHelper,
+      mockTagService,
+      async () => resolvedConfig,
+    );
+
+    await adapter.fetchIssue('1', MOCK_CFG);
+
+    expect(definition.getById).toHaveBeenCalledWith('1', resolvedConfig, mockHttpHelper);
+    expect(getHeadersSpy).toHaveBeenCalledWith(resolvedConfig);
+  });
+
   it('should push changes via definition.updateIssue', async () => {
     const definition = createMockDefinition();
     const adapter = createPluginSyncAdapter(
