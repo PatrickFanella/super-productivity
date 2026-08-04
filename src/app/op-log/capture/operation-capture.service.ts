@@ -268,6 +268,13 @@ export class OperationCaptureService {
    * Supports both syncTimeTracking and updateWorkContextData actions.
    */
   private _captureTimeTrackingFromAction(action: PersistentAction): EntityChange[] {
+    // The shared active-session action is a semantic register update. Its
+    // action payload is sufficient for replay; it deliberately does not emit a
+    // whole TIME_TRACKING entity change that could include historical data.
+    if ('activeSession' in action) {
+      return [];
+    }
+
     // syncTimeTracking action: { contextType, contextId, date, data }
     if (
       'contextType' in action &&

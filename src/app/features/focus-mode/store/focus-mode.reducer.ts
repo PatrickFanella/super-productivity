@@ -9,6 +9,10 @@ import {
   FOCUS_MODE_DEFAULTS,
 } from '../focus-mode.model';
 import { LS } from '../../../core/persistence/storage-keys.const';
+import {
+  projectActiveSession,
+  syncActiveSession,
+} from '../../time-tracking/store/time-tracking.actions';
 
 export const FOCUS_MODE_FEATURE_KEY = 'focusMode';
 
@@ -35,6 +39,7 @@ export const initialState: FocusModeState = {
   pausedTaskId: null,
   _isResumingBreak: false,
   _isOvertimeEnabled: false,
+  _isSharedSessionMirror: false,
 };
 
 const createWorkTimer = (duration: number): TimerState => ({
@@ -69,8 +74,92 @@ const updateTimer = (timer: TimerState): TimerState => {
   return { ...timer, elapsed };
 };
 
+const projectSharedSession = (
+  state: FocusModeState,
+  activeSession: Parameters<typeof projectActiveSession>[0]['activeSession'],
+  isMirror: boolean,
+): FocusModeState => {
+  if (!activeSession.focus) {
+    return { ...state, _isSharedSessionMirror: isMirror };
+  }
+
+  const focus = activeSession.focus;
+  return {
+    ...state,
+    timer: {
+      isRunning: focus.isRunning,
+      startedAt: focus.startedAt,
+      elapsed: focus.elapsed,
+      duration: focus.duration,
+      purpose: focus.purpose,
+      ...(focus.purpose === 'break'
+        ? {
+            isLongBreak: focus.isLongBreak,
+            isManualBreak: focus.isManualBreak,
+          }
+        : {}),
+    },
+    mode: FocusModeMode[focus.mode],
+    currentCycle: focus.currentCycle,
+    pausedTaskId: focus.pausedTaskId,
+    currentScreen: focus.purpose === 'break' ? FocusScreen.Break : FocusScreen.Main,
+    mainState: FocusMainUIState.InProgress,
+    // Receiving a session must not open focus mode automatically, but it also
+    // must not close an overlay the user has already opened while delivery was
+    // in flight.
+    isOverlayShown: state.isOverlayShown,
+    _isSharedSessionMirror: isMirror,
+  };
+};
+
 export const focusModeReducer = createReducer(
   initialState,
+
+  on(syncActiveSession, (state, { activeSession, meta }) => {
+    // A normal local sync action only persists the state the focus reducer has
+    // already committed. Replays and remote operations reconstruct it.
+    if (meta.isRemote !== true) return state;
+
+    if (!activeSession) {
+      return state._isSharedSessionMirror
+        ? {
+            ...state,
+            timer: createIdleTimer(),
+            currentScreen: FocusScreen.Main,
+            mainState: FocusMainUIState.Preparation,
+            pausedTaskId: null,
+            _isSharedSessionMirror: false,
+          }
+        : state;
+    }
+
+    return projectSharedSession(
+      state,
+      activeSession,
+      meta.isApplyingFromOtherClient === true,
+    );
+  }),
+
+  on(projectActiveSession, (state, { activeSession, isMirror }) =>
+    projectSharedSession(state, activeSession, isMirror),
+  ),
+
+  on(a.takeOverSharedSession, (state) => ({
+    ...state,
+    _isSharedSessionMirror: false,
+  })),
+
+  on(a.tickSharedSessionMirror, (state) => {
+    if (!state._isSharedSessionMirror) return state;
+    const timer = updateTimer(state.timer);
+    if (timer.duration > 0 && timer.elapsed >= timer.duration) {
+      return {
+        ...state,
+        timer: { ...timer, elapsed: timer.duration, isRunning: false },
+      };
+    }
+    return { ...state, timer };
+  }),
 
   // Mode changes
   on(a.setFocusModeMode, (state, { mode }) => ({

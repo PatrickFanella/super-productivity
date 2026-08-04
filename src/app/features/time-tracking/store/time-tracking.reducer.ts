@@ -2,8 +2,9 @@ import {
   TimeTrackingActions,
   updateWorkContextData,
   syncTimeTracking,
+  syncActiveSession,
 } from './time-tracking.actions';
-import { createFeature, createReducer, on } from '@ngrx/store';
+import { createReducer, on } from '@ngrx/store';
 import { TimeTrackingState } from '../time-tracking.model';
 import { loadAllData } from '../../../root-store/meta/load-all-data.action';
 import { AppDataComplete } from '../../../op-log/model/model-config';
@@ -100,9 +101,9 @@ export const timeTrackingReducer = createReducer(
       },
     };
   }),
-);
 
-export const timeTrackingFeature = createFeature({
-  name: TIME_TRACKING_FEATURE_KEY,
-  reducer: timeTrackingReducer,
-});
+  on(syncActiveSession, (state, { activeSession }) => ({
+    ...state,
+    activeSession,
+  })),
+);

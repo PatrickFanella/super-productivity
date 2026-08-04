@@ -4,12 +4,16 @@ import { Subject } from 'rxjs';
 import { GlobalConfigService } from '../../config/global-config.service';
 import { expandAnimation } from '../../../ui/animations/expand.ani';
 import { Store } from '@ngrx/store';
-import { cancelFocusSession, hideFocusOverlay } from '../store/focus-mode.actions';
+import {
+  cancelFocusSession,
+  hideFocusOverlay,
+  takeOverSharedSession,
+} from '../store/focus-mode.actions';
 import { fadeInAnimation } from '../../../ui/animations/fade.ani';
 import { warpAnimation, warpInAnimation } from '../../../ui/animations/warp.ani';
 import { T } from 'src/app/t.const';
 import { BannerComponent } from '../../../core/banner/banner/banner.component';
-import { MatIconButton } from '@angular/material/button';
+import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { MatDialog } from '@angular/material/dialog';
 import { FocusModeMainComponent } from '../focus-mode-main/focus-mode-main.component';
@@ -30,6 +34,7 @@ import { CdkTrapFocus } from '@angular/cdk/a11y';
   imports: [
     BannerComponent,
     MatIconButton,
+    MatButton,
     MatIcon,
     FocusModeMainComponent,
     FocusModeSessionDoneComponent,
@@ -92,6 +97,10 @@ export class FocusModeOverlayComponent implements OnDestroy {
 
   cancelFocusSession(): void {
     this._store.dispatch(cancelFocusSession());
+  }
+
+  takeOverSharedSession(): void {
+    this._store.dispatch(takeOverSharedSession());
   }
 
   private _isInputTarget(target: EventTarget | null): boolean {

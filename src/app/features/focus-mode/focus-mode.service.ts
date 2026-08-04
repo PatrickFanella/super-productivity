@@ -47,6 +47,7 @@ export class FocusModeService {
 
   // Overtime
   isInOvertime = this._store.selectSignal(selectors.selectIsInOvertime);
+  isSharedSessionMirror = this._store.selectSignal(selectors.selectIsSharedSessionMirror);
 
   // Compatibility aliases (TODO: remove when components are updated)
   isBreakLong = this.isLongBreak;
@@ -71,7 +72,13 @@ export class FocusModeService {
     this._globalTrackingInterval.globalInterval$
       .pipe(
         filter(() => this.isRunning() === true),
-        tap(() => this._store.dispatch(actions.tick())),
+        tap(() =>
+          this._store.dispatch(
+            this.isSharedSessionMirror()
+              ? actions.tickSharedSessionMirror()
+              : actions.tick(),
+          ),
+        ),
         takeUntilDestroyed(),
       )
       .subscribe();

@@ -318,6 +318,53 @@ describe('validateOperationPayload', () => {
       expect(result.warnings).toBeUndefined();
     });
 
+    it('should validate a shared active-session register update', () => {
+      const result = validateOperationPayload(
+        createTestOperation({
+          actionType: ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+          entityType: 'TIME_TRACKING',
+          entityId: 'ACTIVE_SESSION',
+          payload: {
+            activeSession: {
+              version: 1,
+              id: 'session-1',
+              ownerClientId: 'client-a',
+              taskId: 'task-1',
+              updatedAt: 1_000,
+              expiresAt: 2_000,
+              focus: null,
+            },
+          },
+        }),
+      );
+
+      expect(result.success).toBeTrue();
+    });
+
+    it('should reject malformed shared active sessions', () => {
+      const result = validateOperationPayload(
+        createTestOperation({
+          actionType: ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+          entityType: 'TIME_TRACKING',
+          entityId: 'ACTIVE_SESSION',
+          payload: {
+            activeSession: {
+              version: 1,
+              id: 'session-1',
+              ownerClientId: 'client-a',
+              taskId: null,
+              updatedAt: 2_000,
+              expiresAt: 1_000,
+              focus: null,
+            },
+          },
+        }),
+      );
+
+      expect(result.success).toBeFalse();
+      expect(result.error).toContain('metadata');
+    });
+
     it('should validate TIME_TRACKING UPDATE with updateWorkContextData shape', () => {
       const op = createTestOperation({
         opType: OpType.Update,

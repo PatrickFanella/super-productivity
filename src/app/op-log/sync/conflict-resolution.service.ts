@@ -2561,6 +2561,49 @@ export class ConflictResolutionService {
   private async _createLocalWinUpdateOp(
     conflict: EntityConflict,
   ): Promise<Operation | undefined> {
+    // Active-session ops share a conflict key inside the TIME_TRACKING
+    // singleton, but their payload is only the ephemeral register. Re-emitting
+    // a normal singleton LWW replacement here would snapshot and overwrite all
+    // historical project/tag time. Preserve the semantic action and payload
+    // while giving it the merged dominating clock instead.
+    if (
+      conflict.entityType === 'TIME_TRACKING' &&
+      conflict.localOps.every(
+        (op) => op.actionType === ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+      ) &&
+      conflict.remoteOps.every(
+        (op) => op.actionType === ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+      )
+    ) {
+      const clientId = await this.clientIdProvider.loadClientId();
+      if (!clientId) {
+        OpLog.err(
+          'ConflictResolutionService: Cannot create active-session winner - no client ID',
+        );
+        return undefined;
+      }
+      const winningLocalOp = conflict.localOps.reduce((winner, candidate) =>
+        candidate.timestamp > winner.timestamp ||
+        (candidate.timestamp === winner.timestamp &&
+          candidate.clientId.localeCompare(winner.clientId) > 0)
+          ? candidate
+          : winner,
+      );
+      return {
+        ...winningLocalOp,
+        id: uuidv7(),
+        clientId,
+        vectorClock: this.mergeAndIncrementClocks(
+          [
+            ...conflict.localOps.map((op) => op.vectorClock),
+            ...conflict.remoteOps.map((op) => op.vectorClock),
+          ],
+          clientId,
+        ),
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+      };
+    }
+
     const [semanticRestoreOp] = conflict.localOps;
     const [remoteDeleteOp] = conflict.remoteOps;
     const remoteDeleteIds = remoteDeleteOp ? getOpEntityIds(remoteDeleteOp) : [];

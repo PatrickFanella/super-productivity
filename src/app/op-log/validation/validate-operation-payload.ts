@@ -138,6 +138,67 @@ const validateTaskBatchPayload = (tasks: unknown[]): PayloadValidationResult => 
   return { success: true };
 };
 
+const isFiniteNonNegativeNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const validateActiveSessionPayload = (
+  op: Operation,
+  payload: Record<string, unknown>,
+): PayloadValidationResult => {
+  if (op.entityId !== 'ACTIVE_SESSION') {
+    return {
+      success: false,
+      error: 'syncActiveSession entityId must be ACTIVE_SESSION',
+    };
+  }
+  const value = payload['activeSession'];
+  if (value === null) return { success: true };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { success: false, error: 'syncActiveSession must contain a session or null' };
+  }
+
+  const session = value as Record<string, unknown>;
+  if (
+    session['version'] !== 1 ||
+    !isValidEntityId(session['id']) ||
+    !isValidEntityId(session['ownerClientId']) ||
+    (session['taskId'] !== null && !isValidEntityId(session['taskId'])) ||
+    !isFiniteNonNegativeNumber(session['updatedAt']) ||
+    !isFiniteNonNegativeNumber(session['expiresAt']) ||
+    session['expiresAt'] < session['updatedAt']
+  ) {
+    return { success: false, error: 'syncActiveSession has invalid session metadata' };
+  }
+
+  const focus = session['focus'];
+  if (focus === null) return { success: true };
+  if (!focus || typeof focus !== 'object' || Array.isArray(focus)) {
+    return { success: false, error: 'syncActiveSession focus must be an object or null' };
+  }
+
+  const f = focus as Record<string, unknown>;
+  const validModes = new Set(['Flowtime', 'Pomodoro', 'Countdown']);
+  const validPurposes = new Set(['work', 'break']);
+  if (
+    typeof f['mode'] !== 'string' ||
+    !validModes.has(f['mode']) ||
+    typeof f['purpose'] !== 'string' ||
+    !validPurposes.has(f['purpose']) ||
+    typeof f['isRunning'] !== 'boolean' ||
+    (f['startedAt'] !== null && !isFiniteNonNegativeNumber(f['startedAt'])) ||
+    !isFiniteNonNegativeNumber(f['elapsed']) ||
+    !isFiniteNonNegativeNumber(f['duration']) ||
+    !Number.isInteger(f['currentCycle']) ||
+    (f['currentCycle'] as number) < 0 ||
+    (f['pausedTaskId'] !== null && !isValidEntityId(f['pausedTaskId'])) ||
+    (f['isLongBreak'] !== undefined && typeof f['isLongBreak'] !== 'boolean') ||
+    (f['isManualBreak'] !== undefined && typeof f['isManualBreak'] !== 'boolean')
+  ) {
+    return { success: false, error: 'syncActiveSession has invalid focus metadata' };
+  }
+  return { success: true };
+};
+
 /**
  * Attempts to find an entity-like object in the payload.
  * Uses payload keys from the central entity registry.
@@ -230,6 +291,10 @@ const validateUpdatePayload = (
       };
     }
     return { success: true };
+  }
+
+  if (op.actionType === ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION) {
+    return validateActiveSessionPayload(op, p);
   }
 
   // TIME_TRACKING uses action-payload capture with specific shapes

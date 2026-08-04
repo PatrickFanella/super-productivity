@@ -145,8 +145,8 @@ export class MainHeaderComponent implements OnDestroy {
 
   // Convert more observables to signals
 
-  currentTask = toSignal(this.taskService.currentTask$);
-  currentTaskId = this.taskService.currentTaskId;
+  currentTask = toSignal(this.taskService.displayCurrentTask$);
+  currentTaskId = this.taskService.displayCurrentTaskId;
   enabledSimpleCounters = toSignal(this.simpleCounterService.enabledSimpleCounters$, {
     initialValue: [],
   });

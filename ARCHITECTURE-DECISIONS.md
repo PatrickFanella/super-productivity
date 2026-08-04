@@ -325,6 +325,50 @@ recoverable via local undo, not via sync.
 
 ---
 
+### 8. Cross-Device Active Session as an Owned Semantic Register
+
+**Status**: ✅ Active
+
+**Decision**: Represent task tracking and focus/break activity as one optional,
+versioned `TimeTrackingState.activeSession` register. Exactly one client owns the
+session; every other client projects a read-only mirror until explicit takeover.
+
+**Rationale**:
+
+- Syncing each device's local timer independently can double-count task time and
+  duplicate focus completion, metrics, and notifications.
+- A narrow semantic action can coexist with older clients without a schema bump;
+  replacing the whole `TIME_TRACKING` singleton during conflict resolution could
+  overwrite unrelated historical project/tag time.
+- An explicit 24-hour expiry bounds abandoned sessions while keeping reducer
+  replay deterministic.
+
+**Implementation**:
+
+- Owner transitions emit `[TimeTracking] Sync active session` against the stable
+  `ACTIVE_SESSION` conflict key. Vector clocks and existing deterministic LWW
+  choose concurrent takeover winners.
+- Remote clients clear their local `currentTaskId`, reconstruct the focus clock as
+  a mirror, and cannot run timer side effects until takeover.
+- Startup projects a live register without persisting a new operation. Expiry is
+  evaluated in effects, which emit an ordinary clear operation.
+- Local-win conflict replacement preserves the semantic register payload and a
+  dominating clock; it never snapshots the full time-tracking feature.
+
+**Documentation**: [`active-session-handoff.md`](docs/sync-and-op-log/active-session-handoff.md)
+
+**Key Files**:
+
+- [`active-session.effects.ts`](src/app/features/time-tracking/store/active-session.effects.ts)
+- [`time-tracking.actions.ts`](src/app/features/time-tracking/store/time-tracking.actions.ts)
+- [`focus-mode.reducer.ts`](src/app/features/focus-mode/store/focus-mode.reducer.ts)
+- [`conflict-resolution.service.ts`](src/app/op-log/sync/conflict-resolution.service.ts)
+
+**When to Update This Pattern**: Changing ownership, takeover, expiry, focus
+completion, task-time writing, or TIME_TRACKING conflict replacement behavior.
+
+---
+
 ## How to Use This Document
 
 ### When Making Architectural Changes

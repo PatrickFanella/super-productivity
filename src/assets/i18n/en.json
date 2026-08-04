@@ -374,6 +374,7 @@
       "PREP_STRETCH": "Enjoy some mild stretching",
       "REMOVE_TIME_MINUTE": "Remove 1 minute",
       "RESET_CYCLES": "Reset session counter",
+      "RUNNING_ON_ANOTHER_DEVICE": "This session is running on another device.",
       "RESUME_BREAK": "Resume break",
       "RESUME_SESSION": "Resume session",
       "SELECT_MODE": "Choose your focus mode",
@@ -391,6 +392,7 @@
       "START_FOCUS_SESSION": "Start focus session",
       "START_NEXT_FOCUS_SESSION": "Start next focus session",
       "SWITCH_TASK": "Switch task",
+      "TAKE_OVER_ON_THIS_DEVICE": "Take over on this device",
       "WORKED_FOR": "You worked for"
     },
     "GITEA": {

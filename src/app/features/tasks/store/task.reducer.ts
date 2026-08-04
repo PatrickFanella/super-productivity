@@ -49,6 +49,8 @@ import { TaskSharedActions } from '../../../root-store/meta/task-shared.actions'
 import {
   TimeTrackingActions,
   syncTimeSpent,
+  syncActiveSession,
+  projectActiveSession,
 } from '../../time-tracking/store/time-tracking.actions';
 import { TaskLog } from '../../../core/log';
 import { devError } from '../../../util/dev-error';
@@ -310,6 +312,41 @@ export const taskReducer = createReducer<TaskState>(
       ...state,
       currentTaskId: null,
       lastCurrentTaskId: state.currentTaskId ?? state.lastCurrentTaskId,
+    };
+  }),
+
+  on(syncActiveSession, (state, { activeSession, meta }) => {
+    if (meta.isRemote !== true) return state;
+    if (meta.isApplyingFromOtherClient === true) {
+      return state.currentTaskId === null
+        ? state
+        : {
+            ...state,
+            currentTaskId: null,
+            lastCurrentTaskId: state.currentTaskId,
+          };
+    }
+    const taskId = activeSession?.taskId;
+    return {
+      ...state,
+      currentTaskId: taskId && state.entities[taskId] ? taskId : null,
+    };
+  }),
+
+  on(projectActiveSession, (state, { activeSession, isMirror }) => {
+    if (isMirror) {
+      return state.currentTaskId === null
+        ? state
+        : {
+            ...state,
+            currentTaskId: null,
+            lastCurrentTaskId: state.currentTaskId,
+          };
+    }
+    const taskId = activeSession.taskId;
+    return {
+      ...state,
+      currentTaskId: taskId && state.entities[taskId] ? taskId : null,
     };
   }),
 

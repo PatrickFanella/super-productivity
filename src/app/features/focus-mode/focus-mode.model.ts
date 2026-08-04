@@ -54,6 +54,9 @@ export interface FocusModeState {
 
   // Internal flag: when true, tick reducer won't auto-stop work timer at duration
   _isOvertimeEnabled: boolean;
+
+  /** True when this device is displaying, but does not own, a synced session. */
+  _isSharedSessionMirror?: boolean;
 }
 
 // Mode strategy interface

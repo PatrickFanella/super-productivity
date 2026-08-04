@@ -86,7 +86,11 @@ import { RedmineEffects } from '../features/issue/providers/redmine/redmine.effe
 import { ReminderCountdownEffects } from '../features/reminder/store/reminder-countdown.effects';
 import { SyncEffects } from '../imex/sync/sync.effects';
 import { boardsFeature } from '../features/boards/store/boards.reducer';
-import { timeTrackingFeature } from '../features/time-tracking/store/time-tracking.reducer';
+import {
+  TIME_TRACKING_FEATURE_KEY,
+  timeTrackingReducer,
+} from '../features/time-tracking/store/time-tracking.reducer';
+import { ActiveSessionEffects } from '../features/time-tracking/store/active-session.effects';
 import { ArchiveOperationHandlerEffects } from '../op-log/apply/archive-operation-handler.effects';
 import { plannerFeature } from '../features/planner/store/planner.reducer';
 import { PlannerEffects } from '../features/planner/store/planner.effects';
@@ -167,8 +171,8 @@ import {
 
     StoreModule.forFeature(boardsFeature),
 
-    StoreModule.forFeature(timeTrackingFeature),
-    EffectsModule.forFeature([ArchiveOperationHandlerEffects]),
+    StoreModule.forFeature(TIME_TRACKING_FEATURE_KEY, timeTrackingReducer),
+    EffectsModule.forFeature([ArchiveOperationHandlerEffects, ActiveSessionEffects]),
 
     StoreModule.forFeature(plannerFeature),
     EffectsModule.forFeature([PlannerEffects]),

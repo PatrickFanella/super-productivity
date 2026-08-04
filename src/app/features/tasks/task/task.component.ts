@@ -202,7 +202,7 @@ export class TaskComponent implements OnDestroy, AfterViewInit {
   showUndoneAnimation = signal(false);
 
   // Use shared signals from services to avoid creating 600+ subscriptions on initial render
-  isCurrent = computed(() => this._taskService.currentTaskId() === this.task().id);
+  isCurrent = computed(() => this._taskService.displayCurrentTaskId() === this.task().id);
   isSelected = computed(() => this._taskService.selectedTaskId() === this.task().id);
   isShowCloseButton = computed(() => {
     // Only show close button when task is selected AND not on mobile (bottom panel)

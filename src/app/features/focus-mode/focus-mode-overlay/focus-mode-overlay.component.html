@@ -23,19 +23,40 @@
 
       <!-- Mode selector is now integrated into focus-mode-main component -->
 
-      <!-- -->
-      @switch (activePage()) {
-        <!-- -->
-        @case (FocusScreen.Main) {
-          <focus-mode-main @warpIn></focus-mode-main>
-        }
-        @case (FocusScreen.SessionDone) {
-          <focus-mode-session-done @warpIn></focus-mode-session-done>
-        }
-        @case (FocusScreen.Break) {
-          <focus-mode-break @warpIn></focus-mode-break>
-        }
+      @if (focusModeService.isSharedSessionMirror()) {
+        <aside
+          class="shared-session-handoff"
+          role="status"
+        >
+          <span>{{ T.F.FOCUS_MODE.RUNNING_ON_ANOTHER_DEVICE | translate }}</span>
+          <button
+            mat-flat-button
+            color="primary"
+            (click)="takeOverSharedSession()"
+          >
+            {{ T.F.FOCUS_MODE.TAKE_OVER_ON_THIS_DEVICE | translate }}
+          </button>
+        </aside>
       }
+
+      <!-- -->
+      <div
+        class="focus-session-content"
+        [attr.inert]="focusModeService.isSharedSessionMirror() ? '' : null"
+      >
+        @switch (activePage()) {
+          <!-- -->
+          @case (FocusScreen.Main) {
+            <focus-mode-main @warpIn></focus-mode-main>
+          }
+          @case (FocusScreen.SessionDone) {
+            <focus-mode-session-done @warpIn></focus-mode-session-done>
+          }
+          @case (FocusScreen.Break) {
+            <focus-mode-break @warpIn></focus-mode-break>
+          }
+        }
+      </div>
     </main>
   }
 </div>

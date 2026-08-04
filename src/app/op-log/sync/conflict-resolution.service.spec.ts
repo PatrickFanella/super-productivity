@@ -5877,6 +5877,38 @@ describe('ConflictResolutionService', () => {
       expect(lwwOp.entityIds).toEqual(['task-1', 'subtask-1']);
     });
 
+    it('should preserve the semantic active-session payload on a local win', async () => {
+      const now = Date.now();
+      const localOp: Operation = {
+        ...createOpWithTimestamp('local-session', 'client-a', now),
+        actionType: ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+        entityType: 'TIME_TRACKING',
+        entityId: 'ACTIVE_SESSION',
+        payload: { activeSession: null },
+      };
+      const remoteOp: Operation = {
+        ...createOpWithTimestamp('remote-session', 'client-b', now - 1_000),
+        actionType: ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION,
+        entityType: 'TIME_TRACKING',
+        entityId: 'ACTIVE_SESSION',
+        payload: { activeSession: { id: 'remote-session' } },
+      };
+
+      const lwwOp = await (service as any)._createLocalWinUpdateOp({
+        entityType: 'TIME_TRACKING',
+        entityId: 'ACTIVE_SESSION',
+        localOps: [localOp],
+        remoteOps: [remoteOp],
+        suggestedResolution: 'local',
+      } satisfies EntityConflict);
+
+      expect(lwwOp.actionType).toBe(ActionType.TIME_TRACKING_SYNC_ACTIVE_SESSION);
+      expect(lwwOp.payload).toEqual({ activeSession: null });
+      expect(lwwOp.payload.project).toBeUndefined();
+      expect(lwwOp.payload.tag).toBeUndefined();
+      expect(lwwOp.vectorClock[TEST_CLIENT_ID]).toBeGreaterThan(0);
+    });
+
     it('should not create local-win op when clientId is unavailable', async () => {
       const now = Date.now();
       mockClientIdProvider.loadClientId.and.returnValue(Promise.resolve(null));

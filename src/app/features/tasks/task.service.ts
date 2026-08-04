@@ -3,7 +3,7 @@ import typia from 'typia';
 import { distinctUntilChanged, first, map, take, withLatestFrom } from 'rxjs/operators';
 import { computed, effect, inject, Injectable, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Observable } from 'rxjs';
+import { combineLatest, Observable } from 'rxjs';
 import {
   ArchiveTask,
   DEFAULT_TASK,
@@ -90,7 +90,10 @@ import {
   syncTimeSpent,
   syncTimeTracking,
 } from '../time-tracking/store/time-tracking.actions';
-import { selectTimeTrackingState } from '../time-tracking/store/time-tracking.selectors';
+import {
+  selectSharedActiveSession,
+  selectTimeTrackingState,
+} from '../time-tracking/store/time-tracking.selectors';
 import { ArchiveService } from '../archive/archive.service';
 import { TaskArchiveService } from '../archive/task-archive.service';
 import { TODAY_TAG } from '../tag/tag.const';
@@ -132,9 +135,26 @@ export class TaskService {
   );
   currentTaskId = toSignal(this.currentTaskId$, { initialValue: null });
 
+  sharedActiveSession = this._store.selectSignal(selectSharedActiveSession);
+  displayCurrentTaskId = computed(
+    () => this.currentTaskId() ?? this.sharedActiveSession()?.taskId ?? null,
+  );
+
   currentTask$: Observable<Task | null> = this._store.pipe(
     select(selectCurrentTask),
     // NOTE: we can't use share here, as we need the last emitted value
+  );
+
+  displayCurrentTask$: Observable<Task | null> = combineLatest([
+    this.currentTask$,
+    this._store.pipe(select(selectSharedActiveSession)),
+    this._store.pipe(select(selectTaskEntities)),
+  ]).pipe(
+    map(
+      ([currentTask, sharedSession, entities]) =>
+        currentTask ??
+        (sharedSession?.taskId ? (entities[sharedSession.taskId] ?? null) : null),
+    ),
   );
 
   currentTaskParentOrCurrent$: Observable<Task | undefined> = this._store.pipe(
@@ -383,6 +403,9 @@ export class TaskService {
   }
 
   pauseCurrent(): void {
+    // A remotely owned task is display-only. Stopping it from this device
+    // would bypass the explicit focus/session takeover contract.
+    if (this.currentTaskId() === null && this.sharedActiveSession()) return;
     this._store.dispatch(unsetCurrentTask());
   }
 

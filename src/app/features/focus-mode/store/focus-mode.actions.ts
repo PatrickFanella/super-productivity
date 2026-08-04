@@ -4,6 +4,10 @@ import { FocusModeMode } from '../focus-mode.model';
 // Core actions
 export const focusModeLoaded = createAction('[FocusMode] Loaded');
 export const tick = createAction('[FocusMode] Timer Tick');
+export const tickSharedSessionMirror = createAction(
+  '[FocusMode] Shared Session Mirror Tick',
+);
+export const takeOverSharedSession = createAction('[FocusMode] Take Over Shared Session');
 
 // Primary actions (using Focus prefix for consistency)
 export const setFocusModeMode = createAction(

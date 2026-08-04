@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import { createAction, createActionGroup, props } from '@ngrx/store';
 import { WorkContextType } from '../../work-context/work-context.model';
-import { TimeTrackingState, TTWorkContextData } from '../time-tracking.model';
+import {
+  ACTIVE_SESSION_ENTITY_ID,
+  SharedActiveSession,
+  TimeTrackingState,
+  TTWorkContextData,
+} from '../time-tracking.model';
 import { Task } from '../../tasks/task.model';
 import { PersistentActionMeta } from '../../../op-log/core/persistent-action.interface';
 import { OpType } from '../../../op-log/core/operation.types';
@@ -46,6 +51,29 @@ export const syncTimeTracking = createAction(
       opType: OpType.Update,
     } satisfies PersistentActionMeta,
   }),
+);
+
+/**
+ * Updates the single cross-device active-session register. Older clients know
+ * the TIME_TRACKING entity type but ignore this unfamiliar action string.
+ */
+export const syncActiveSession = createAction(
+  '[TimeTracking] Sync active session',
+  (actionProps: { activeSession: SharedActiveSession | null }) => ({
+    ...actionProps,
+    meta: {
+      isPersistent: true,
+      entityType: 'TIME_TRACKING',
+      entityId: ACTIVE_SESSION_ENTITY_ID,
+      opType: OpType.Update,
+    } as PersistentActionMeta,
+  }),
+);
+
+/** Rebuilds device-local timer/focus state from the persisted shared register. */
+export const projectActiveSession = createAction(
+  '[TimeTracking] Project active session',
+  props<{ activeSession: SharedActiveSession; isMirror: boolean }>(),
 );
 
 export const TimeTrackingActions = createActionGroup({

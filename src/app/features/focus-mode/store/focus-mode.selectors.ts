@@ -109,6 +109,11 @@ export const selectIsOvertimeEnabled = createSelector(
   (state) => state._isOvertimeEnabled,
 );
 
+export const selectIsSharedSessionMirror = createSelector(
+  selectFocusModeState,
+  (state) => state._isSharedSessionMirror === true,
+);
+
 // Bug #7715: stays true while paused so the display keeps showing
 // the overtime value (`timeElapsed`) instead of falling back to
 // `timeRemaining`, which clamps to 0:00 once elapsed >= duration.
