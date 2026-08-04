@@ -244,6 +244,10 @@ describe('performance migrations', () => {
       join(currentDir, '../docker-compose.build.yml'),
       'utf8',
     );
+    const externalEdgeComposeFile = readFileSync(
+      join(currentDir, '../docker-compose.external-edge.yml'),
+      'utf8',
+    );
     const helmDeployment = readFileSync(
       join(currentDir, '../helm/supersync/templates/deployment.yaml'),
       'utf8',
@@ -286,6 +290,12 @@ describe('performance migrations', () => {
     expect(deployScript).toContain('packages/shared-schema');
     expect(deployScript).toContain('Refusing to build a labeled supersync image');
     expect(deployScript).toContain('SUPERSYNC_SKIP_IMAGE_REVISION_CHECK');
+    expect(deployScript).toContain('COMPOSE_OVERRIDE_FILE');
+    expect(deployScript).toContain('SUPERSYNC_INCLUDE_MONITORING');
+    expect(deployScript).toContain('"${SUPERSYNC_INCLUDE_MONITORING:-true}" = "true"');
+    expect(deployScript).toContain(
+      'COMPOSE_FILES="$COMPOSE_FILES -f $COMPOSE_OVERRIDE_FILE"',
+    );
     expect(deployScript).toContain('org.opencontainers.image.revision');
     expect(deployScript).toContain('config --format json');
     expect(deployScript).toContain('.services.supersync.image // empty');
@@ -343,6 +353,10 @@ describe('performance migrations', () => {
     expect(dockerfile).toContain('NODE_OPTIONS=--max-old-space-size=576');
     expect(composeBuildFile).toContain('VCS_REF: ${SUPERSYNC_BUILD_SHA:-local}');
     expect(composeBuildFile).toContain('MIGRATE_RECOVERY_BUILD_LOCAL=true');
+    expect(externalEdgeComposeFile).toContain('ports: !override');
+    expect(externalEdgeComposeFile).toContain('SUPERSYNC_BIND_ADDRESS');
+    expect(externalEdgeComposeFile).toContain('profiles:');
+    expect(externalEdgeComposeFile).toContain('bundled-edge');
     expect(buildAndPushScript).toContain('supersync_image_source_revision()');
     expect(buildAndPushScript).toContain('assert_clean_supersync_image_inputs');
     expect(buildAndPushScript).toContain('git -C "$REPO_ROOT" log -1 --format=%H');

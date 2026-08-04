@@ -95,7 +95,7 @@ load_env_value() {
     export "$key=$value"
 }
 
-for env_key in GHCR_USER GHCR_TOKEN DATABASE_URL POSTGRES_SERVICE POSTGRES_WAIT_TIMEOUT MIGRATION_TIMEOUT MIGRATE_STEP_TIMEOUT DEPLOY_WAIT_TIMEOUT SUPERSYNC_SKIP_IMAGE_REVISION_CHECK; do
+for env_key in GHCR_USER GHCR_TOKEN DATABASE_URL POSTGRES_SERVICE POSTGRES_WAIT_TIMEOUT MIGRATION_TIMEOUT MIGRATE_STEP_TIMEOUT DEPLOY_WAIT_TIMEOUT SUPERSYNC_SKIP_IMAGE_REVISION_CHECK COMPOSE_OVERRIDE_FILE SUPERSYNC_INCLUDE_MONITORING; do
     load_env_value "$env_key"
 done
 
@@ -177,7 +177,18 @@ fi
 
 # Check if monitoring compose exists and include it
 COMPOSE_FILES="-f docker-compose.yml"
-if [ -f "docker-compose.monitoring.yml" ]; then
+if [ -n "${COMPOSE_OVERRIDE_FILE:-}" ]; then
+    if [ ! -f "$COMPOSE_OVERRIDE_FILE" ]; then
+        echo "ERROR: COMPOSE_OVERRIDE_FILE does not exist: $COMPOSE_OVERRIDE_FILE"
+        exit 1
+    fi
+    if [[ "$COMPOSE_OVERRIDE_FILE" =~ [[:space:]] ]]; then
+        echo "ERROR: COMPOSE_OVERRIDE_FILE cannot contain whitespace"
+        exit 1
+    fi
+    COMPOSE_FILES="$COMPOSE_FILES -f $COMPOSE_OVERRIDE_FILE"
+fi
+if [ -f "docker-compose.monitoring.yml" ] && [ "${SUPERSYNC_INCLUDE_MONITORING:-true}" = "true" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.monitoring.yml"
 fi
 

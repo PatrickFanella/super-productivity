@@ -153,6 +153,42 @@ printf '%s\n' \
 > Fresh databases need none of this — `migrate deploy` applies `0_init` and the
 > rest of the chain automatically.
 
+### Existing external reverse proxy
+
+If HTTPS already terminates at Caddy, Traefik, nginx, or another trusted edge,
+keep the bundled Caddy service stopped and publish only the SuperSync origin on
+a private interface. Add these values to `.env`:
+
+```bash
+COMPOSE_OVERRIDE_FILE=docker-compose.external-edge.yml
+SUPERSYNC_BIND_ADDRESS=10.0.0.56
+SUPERSYNC_PORT=1900
+SUPERSYNC_INCLUDE_MONITORING=false
+PUBLIC_URL=https://sync.example.com
+WEBAUTHN_RP_ID=sync.example.com
+WEBAUTHN_ORIGIN=https://sync.example.com
+CORS_ORIGINS=https://app.example.com
+```
+
+Then use the normal migration-aware deployment path:
+
+```bash
+./scripts/deploy.sh
+# Or build the exact checked-out source:
+./scripts/deploy.sh --build
+```
+
+`docker-compose.external-edge.yml` requires Docker Compose 2.24.4 or newer for
+the `!override` port tag. PostgreSQL remains internal. Set
+`SUPERSYNC_BIND_ADDRESS` to a private address reachable by the reverse proxy,
+not `0.0.0.0` on an internet-facing host.
+
+The external proxy must support WebSocket upgrades, forward the original HTTPS
+scheme, set `Referrer-Policy: no-referrer`, and remove the upstream `Referer`.
+Its access and failure logs must replace the complete query suffix because the
+WebSocket JWT is carried in the URL. The bundled [Caddyfile](./Caddyfile) is the
+reference policy.
+
 For local `prisma migrate dev` shadow databases, apply migrations containing
 `CREATE INDEX CONCURRENTLY` through `prisma db execute` outside the transaction
 and then mark the migration applied, mirroring the production deploy workaround.
@@ -219,15 +255,19 @@ npm start
 
 All configuration is done via environment variables.
 
-| Variable       | Default                              | Description                                                                     |
-| :------------- | :----------------------------------- | :------------------------------------------------------------------------------ |
-| `PORT`         | `1900`                               | Server port                                                                     |
-| `HOST`         | `0.0.0.0`                            | Server bind address. Use `::` for IPv6-only deployments.                        |
-| `DATABASE_URL` | -                                    | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/db`)  |
-| `JWT_SECRET`   | -                                    | **Required.** Secret for signing JWTs (min 32 chars)                            |
-| `PUBLIC_URL`   | -                                    | **Required.** Public URL used for email links (e.g. `https://sync.example.com`) |
-| `CORS_ORIGINS` | `https://app.super-productivity.com` | Allowed CORS origins                                                            |
-| `SMTP_HOST`    | -                                    | SMTP Server for emails                                                          |
+| Variable                       | Default                              | Description                                                                     |
+| :----------------------------- | :----------------------------------- | :------------------------------------------------------------------------------ |
+| `PORT`                         | `1900`                               | Server port                                                                     |
+| `HOST`                         | `0.0.0.0`                            | Server bind address. Use `::` for IPv6-only deployments.                        |
+| `DATABASE_URL`                 | -                                    | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/db`)  |
+| `JWT_SECRET`                   | -                                    | **Required.** Secret for signing JWTs (min 32 chars)                            |
+| `PUBLIC_URL`                   | -                                    | **Required.** Public URL used for email links (e.g. `https://sync.example.com`) |
+| `CORS_ORIGINS`                 | `https://app.super-productivity.com` | Allowed CORS origins                                                            |
+| `SMTP_HOST`                    | -                                    | SMTP Server for emails                                                          |
+| `COMPOSE_OVERRIDE_FILE`        | -                                    | Optional Compose override included by `deploy.sh`                               |
+| `SUPERSYNC_BIND_ADDRESS`       | `127.0.0.1`                          | Origin bind address used by the external-edge override                          |
+| `SUPERSYNC_PORT`               | `1900`                               | Host port used by the external-edge override                                    |
+| `SUPERSYNC_INCLUDE_MONITORING` | `true`                               | Include the bundled Dozzle and Uptime Kuma Compose file during deploys          |
 
 ## API Endpoints
 

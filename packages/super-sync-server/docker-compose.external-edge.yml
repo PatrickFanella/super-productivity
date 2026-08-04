@@ -1,0 +1,16 @@
+# Override for deployments where TLS terminates at an existing reverse proxy.
+#
+# Set COMPOSE_OVERRIDE_FILE=docker-compose.external-edge.yml in .env so
+# scripts/deploy.sh includes this file. Keep SUPERSYNC_BIND_ADDRESS on a private
+# interface; never expose PostgreSQL or port 1900 directly to the internet.
+
+services:
+  supersync:
+    ports: !override
+      - '${SUPERSYNC_BIND_ADDRESS:-127.0.0.1}:${SUPERSYNC_PORT:-1900}:1900'
+
+  # The base Compose file retains the bundled Caddy definition for normal
+  # deployments, but this profile keeps it stopped unless explicitly enabled.
+  caddy:
+    profiles:
+      - bundled-edge
