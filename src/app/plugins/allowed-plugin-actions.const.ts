@@ -9,6 +9,13 @@ import {
 } from '../features/focus-mode/store/focus-mode.actions';
 import { setActiveWorkContext } from '../features/work-context/store/work-context.actions';
 import { updateGlobalConfigSection } from '../features/config/store/global-config.actions';
+import { TaskSharedActions } from '../root-store/meta/task-shared.actions';
+import {
+  addTaskRepeatCfgToTask,
+  deleteTaskRepeatCfgInstance,
+  updateTaskRepeatCfg,
+} from '../features/task-repeat-cfg/store/task-repeat-cfg.actions';
+import { IssueProviderActions } from '../features/issue/store/issue-provider.actions';
 import {
   hideAddTaskBar,
   hideNonTaskSidePanelContent,
@@ -50,6 +57,16 @@ export const ALLOWED_PLUGIN_ACTIONS = [
   setCurrentTask,
   setSelectedTask,
   // addSubTask,
+
+  // Task Repeat Config Management
+  addTaskRepeatCfgToTask,
+  updateTaskRepeatCfg,
+  deleteTaskRepeatCfgInstance,
+  TaskSharedActions.deleteTaskRepeatCfg,
+
+  // Issue Provider Management (create and update only; no delete)
+  IssueProviderActions.addIssueProvider,
+  IssueProviderActions.updateIssueProvider,
 
   // Project Management
   // addProject,
