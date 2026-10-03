@@ -1,0 +1,25 @@
+I also had my list of ideas I forgot to include
+better self-hosted options especially self hosted sync
+design how break handling should work when you are tracking time
+only notify during work hours 'tracking hours'
+simplify adding a subtask Reduce Clicks When Creating Subtasks #6593
+turn task sidebar into a modal
+Customizable task context menu, toolbar and task panel #7073
+Direct Image Paste into Attachments #6629
+rolling backups
+sort tags by folder
+more/easier to search icons
+schedule a habit habit expansion #7008
+[Feature Request] Support for Project Folders / Nesting in Plugin API #6425
+Board/Kanban Collection #7245
+Linux/Wayland Global Shortcuts, Quick Entry, & CLI Commands #7114
+Convert existing tasks into subtasks #7129
+Custom accomplishment sound #7187
+Better UI for notes #7204
+Add noise/audio to habit settings to signal the periodic end of a repeated countdown or stopwatch #7309
+feat(sounds): Custom Focus Timer Sounds #7505
+Task and Tag handling collection #3111
+Repeat/Recurring Task Improvement Collection #4931
+Pomodoro Timer Collection #3110
+built in mcp that has api parity
+
